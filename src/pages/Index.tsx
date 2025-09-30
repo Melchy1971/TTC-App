@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
 import { Settings } from "@/components/Settings";
 import { Communication } from "@/components/Communication";
+import { TeamOverview } from "@/components/TeamOverview";
 
 const Index = () => {
   const [currentPage, setCurrentPage] = useState("dashboard");
@@ -59,6 +60,8 @@ const Index = () => {
         return <Dashboard />;
       case "matches":
         return <MatchSchedule />;
+      case "teams":
+        return <TeamOverview />;
       case "admin":
         return <AdminPanel />;
       case "communication":

@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Home, Calendar, Settings, Trophy, Shield, MessageCircle } from "lucide-react";
+import { Home, Calendar, Settings, Trophy, Shield, MessageCircle, Users } from "lucide-react";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -33,6 +33,7 @@ export const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
 
   const menuItems = [
     { id: "dashboard", label: "Dashboard", icon: Home, requiresAdmin: false },
+    { id: "teams", label: "Mannschaften", icon: Users, requiresAdmin: false },
     { id: "matches", label: "Spielplan", icon: Calendar, requiresAdmin: false },
     { id: "communication", label: "Kommunikation", icon: MessageCircle, requiresAdmin: false },
     { id: "admin", label: "Admin-Bereich", icon: Shield, requiresAdmin: true },
