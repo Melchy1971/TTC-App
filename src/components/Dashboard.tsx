@@ -1,6 +1,5 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Users, Calendar, Trophy, TrendingUp, Upload } from "lucide-react";
+import { Users, Calendar, Trophy, TrendingUp } from "lucide-react";
 
 export const Dashboard = () => {
   const stats = [
@@ -47,10 +46,6 @@ export const Dashboard = () => {
           <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
           <p className="text-muted-foreground">Willkommen zurück! Hier ist eine Übersicht über Ihren Verein.</p>
         </div>
-        <Button className="bg-gradient-primary hover:bg-primary-hover shadow-sport">
-          <Upload className="w-4 h-4 mr-2" />
-          ICS Import
-        </Button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
