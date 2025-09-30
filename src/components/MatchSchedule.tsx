@@ -9,7 +9,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Match } from "@/types/match";
 
 const LOCAL_STORAGE_KEY = "icsImportedMatches";
@@ -64,7 +63,7 @@ export const MatchSchedule = () => {
     status: "scheduled"
   });
   const [resultForm, setResultForm] = useState({ home: "", away: "" });
-  const [activeTab, setActiveTab] = useState("overview");
+  const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -393,26 +392,9 @@ export const MatchSchedule = () => {
     [allMatches]
   );
 
-  const filteredMatches = useMemo(() => {
-    const lowerSearch = searchTerm.toLowerCase();
-    if (!lowerSearch) {
-      return sortedAllMatches;
-    }
-
-    return sortedAllMatches.filter((match) => {
-      const teamLabel = getTeamLabel(match.team);
-      return (
-        teamLabel.toLowerCase().includes(lowerSearch) ||
-        match.opponent.toLowerCase().includes(lowerSearch) ||
-        match.location.toLowerCase().includes(lowerSearch)
-      );
-    });
-  }, [sortedAllMatches, searchTerm]);
-
   const matchesByTeam = useMemo(() => {
     const grouped: Record<string, Match[]> = {};
-
-    filteredMatches.forEach((match) => {
+    sortedAllMatches.forEach((match) => {
       const teamLabel = getTeamLabel(match.team);
       if (!grouped[teamLabel]) {
         grouped[teamLabel] = [];
@@ -421,17 +403,32 @@ export const MatchSchedule = () => {
     });
 
     return grouped;
-  }, [filteredMatches]);
+  }, [sortedAllMatches]);
 
-  const teams = useMemo(() => {
-    const teamSet = new Set<string>();
+  const teams = useMemo(
+    () => Object.keys(matchesByTeam).sort((a, b) => a.localeCompare(b, "de-DE")),
+    [matchesByTeam]
+  );
 
-    allMatches.forEach((match) => {
-      teamSet.add(getTeamLabel(match.team));
+  const teamMatches = useMemo(() => {
+    if (!selectedTeam) return [];
+    const matches = matchesByTeam[selectedTeam] ?? [];
+    const lowerSearch = searchTerm.toLowerCase();
+    if (!lowerSearch) {
+      return matches;
+    }
+
+    return matches.filter((match) => {
+      const teamLabel = getTeamLabel(match.team).toLowerCase();
+      const opponent = (match.opponent || "").toLowerCase();
+      const location = (match.location || "").toLowerCase();
+      return (
+        teamLabel.includes(lowerSearch) ||
+        opponent.includes(lowerSearch) ||
+        location.includes(lowerSearch)
+      );
     });
-
-    return Array.from(teamSet).sort((a, b) => a.localeCompare(b, "de-DE"));
-  }, [allMatches]);
+  }, [matchesByTeam, searchTerm, selectedTeam]);
 
   const currentMatchdayDate = useMemo(() => {
     const today = new Date();
@@ -475,17 +472,16 @@ export const MatchSchedule = () => {
   }, [currentMatchdayDate]);
 
   useEffect(() => {
-    if (activeTab === "overview") return;
-
-    if (teams.length === 0) {
-      setActiveTab("overview");
-      return;
+    if (!selectedTeam) return;
+    if (!teams.includes(selectedTeam)) {
+      setSelectedTeam(null);
     }
+  }, [selectedTeam, teams]);
 
-    if (!teams.includes(activeTab)) {
-      setActiveTab(teams[0]);
-    }
-  }, [teams, activeTab]);
+  const selectedTeamMatchesCount = useMemo(
+    () => (selectedTeam ? matchesByTeam[selectedTeam]?.length ?? 0 : 0),
+    [matchesByTeam, selectedTeam]
+  );
 
   const renderMatchCard = (match: Match) => {
     const isImported = match.source === "ics";
@@ -614,51 +610,39 @@ export const MatchSchedule = () => {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Spielplan</h1>
-          <p className="text-muted-foreground">Verwalten Sie alle Spiele und Ergebnisse</p>
+          <p className="text-muted-foreground">
+            {selectedTeam
+              ? `Spielplan und Ergebnisse für ${selectedTeam}.`
+              : "Überblick über den aktuellen Spieltag und alle Mannschaften."}
+          </p>
         </div>
-        {canEdit && (
-          <Button className="bg-gradient-primary shadow-sport hover:bg-primary-hover" onClick={openCreateDialog}>
-            <Plus className="mr-2 h-4 w-4" />
-            Spiel hinzufügen
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {selectedTeam && (
+            <Button
+              variant="outline"
+              className="border-red-200 text-red-600 hover:bg-red-50"
+              onClick={() => {
+                setSelectedTeam(null);
+                setSearchTerm("");
+              }}
+            >
+              Zur Übersicht
+            </Button>
+          )}
+          {canEdit && (
+            <Button
+              className="bg-gradient-primary shadow-sport hover:bg-primary-hover"
+              onClick={openCreateDialog}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Spiel hinzufügen
+            </Button>
+          )}
+        </div>
       </div>
 
-      <div className="relative flex-1 max-w-md">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-muted-foreground" />
-        <Input
-          placeholder="Spiel oder Ort suchen..."
-          value={searchTerm}
-          onChange={(event) => setSearchTerm(event.target.value)}
-          className="pl-10"
-        />
-      </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="flex w-full flex-wrap gap-2 overflow-x-auto">
-          <TabsTrigger value="overview" className="flex-shrink-0">
-            Übersicht
-          </TabsTrigger>
-          {teams.map((team) => {
-            const teamMatchesCount = matchesByTeam[team]?.length ?? 0;
-            return (
-              <TabsTrigger
-                key={team}
-                value={team}
-                className="flex-shrink-0 items-center gap-2"
-              >
-                <span>{team}</span>
-                {teamMatchesCount > 0 && (
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                    {teamMatchesCount}
-                  </span>
-                )}
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
-
-        <TabsContent value="overview" className="space-y-4">
+      {!selectedTeam ? (
+        <>
           <Card>
             <CardHeader>
               <CardTitle>Aktueller Spieltag</CardTitle>
@@ -680,41 +664,86 @@ export const MatchSchedule = () => {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
 
-        {teams.map((team) => {
-          const teamMatches = matchesByTeam[team] ?? [];
-          return (
-            <TabsContent key={team} value={team} className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>{team}</CardTitle>
-                  <CardDescription>
-                    {teamMatches.length > 0
-                      ? "Alle Spielpaarungen dieser Mannschaft."
-                      : searchTerm
-                        ? "Keine Spiele passend zur Suche gefunden."
-                        : "Für diese Mannschaft wurden noch keine Spiele erfasst."}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {teamMatches.length > 0 ? (
-                    <div className="space-y-4">
-                      {teamMatches.map(renderMatchCard)}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      {searchTerm
-                        ? "Passen Sie den Suchbegriff an, um weitere Spiele anzuzeigen."
-                        : "Legen Sie neue Spiele an oder importieren Sie einen Spielplan."}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          );
-        })}
-      </Tabs>
+          <Card>
+            <CardHeader>
+              <CardTitle>Mannschaften</CardTitle>
+              <CardDescription>
+                {teams.length > 0
+                  ? "Wählen Sie eine Mannschaft aus, um deren Spielplan einzusehen."
+                  : "Es wurden noch keine Mannschaften mit Spielen hinterlegt."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {teams.length > 0 ? (
+                <div className="flex flex-wrap gap-3">
+                  {teams.map((team) => {
+                    const teamMatchCount = matchesByTeam[team]?.length ?? 0;
+                    return (
+                      <Button
+                        key={team}
+                        variant="outline"
+                        className="flex items-center gap-3 rounded-lg border-dashed"
+                        onClick={() => {
+                          setSelectedTeam(team);
+                          setSearchTerm("");
+                        }}
+                      >
+                        <span>{team}</span>
+                        {teamMatchCount > 0 && (
+                          <Badge variant="secondary" className="ml-auto">
+                            {teamMatchCount}
+                          </Badge>
+                        )}
+                      </Button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Legen Sie neue Spiele an oder importieren Sie einen Spielplan, um hier Mannschaften zu sehen.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>{selectedTeam}</CardTitle>
+            <CardDescription>
+              {selectedTeamMatchesCount > 0
+                ? "Alle Spielpaarungen dieser Mannschaft."
+                : "Für diese Mannschaft wurden noch keine Spiele erfasst."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {selectedTeamMatchesCount > 0 && (
+              <div className="relative max-w-md">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-muted-foreground" />
+                <Input
+                  placeholder="Spiel oder Ort suchen..."
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            )}
+
+            {teamMatches.length > 0 ? (
+              <div className="space-y-4">
+                {teamMatches.map(renderMatchCard)}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {selectedTeamMatchesCount > 0
+                  ? "Keine Spiele passend zur Suche gefunden."
+                  : "Legen Sie neue Spiele an oder importieren Sie einen Spielplan."}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Dialog
         open={resultDialogOpen}
