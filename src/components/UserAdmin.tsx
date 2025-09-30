@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { UserPlus, Search, Mail, Phone, Shield, Crown, User } from "lucide-react";
+import { UserPlus, Search, Mail, Phone, Shield, Crown, User, UsersRound } from "lucide-react";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
@@ -84,6 +84,8 @@ export const UserAdmin = () => {
     switch (role) {
       case "admin":
         return Crown;
+      case "vorstand":
+        return UsersRound;
       case "captain":
         return Shield;
       default:
@@ -94,6 +96,7 @@ export const UserAdmin = () => {
   const getRoleBadge = (role: string) => {
     const colors = {
       admin: "bg-gradient-primary text-primary-foreground",
+      vorstand: "bg-gradient-to-r from-amber-500 to-amber-600 text-white",
       captain: "bg-gradient-secondary text-secondary-foreground",
       player: "bg-muted text-muted-foreground"
     };
@@ -107,6 +110,7 @@ export const UserAdmin = () => {
   const getRoleLabel = (role: string) => {
     const labels: Record<string, string> = {
       admin: "Admin",
+      vorstand: "Vorstand",
       captain: "Mannschaftsführer",
       player: "Spieler"
     };
@@ -211,6 +215,7 @@ export const UserAdmin = () => {
           <SelectContent>
             <SelectItem value="all">Alle Rollen</SelectItem>
             <SelectItem value="admin">Administrator</SelectItem>
+            <SelectItem value="vorstand">Vorstand</SelectItem>
             <SelectItem value="captain">Mannschaftsführer</SelectItem>
             <SelectItem value="player">Spieler</SelectItem>
           </SelectContent>
@@ -294,6 +299,7 @@ export const UserAdmin = () => {
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="admin">Administrator</SelectItem>
+                                <SelectItem value="vorstand">Vorstand</SelectItem>
                                 <SelectItem value="captain">Mannschaftsführer</SelectItem>
                                 <SelectItem value="player">Spieler</SelectItem>
                               </SelectContent>

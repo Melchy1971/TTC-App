@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,8 @@ import {
   Trash2,
   UsersRound,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface CommunicationMessage {
   id: number;
@@ -91,6 +93,8 @@ const qttrList: RatingEntry[] = [
 export const Communication = () => {
   const [messages, setMessages] = useState(initialMessages);
   const [events, setEvents] = useState(initialEvents);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [roleLoading, setRoleLoading] = useState(true);
 
   const [messageForm, setMessageForm] = useState({
     title: "",
@@ -109,6 +113,65 @@ export const Communication = () => {
   const upcomingEvents = useMemo(() => {
     return [...events].sort((a, b) => a.date.localeCompare(b.date));
   }, [events]);
+
+  useEffect(() => {
+    const fetchRole = async () => {
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        const user = authData?.user;
+
+        if (!user) {
+          setRoleLoading(false);
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", user.id)
+          .single();
+
+        if (error) {
+          console.error("Error fetching user role", error);
+        }
+
+        if (data?.role) {
+          setUserRole(data.role);
+        } else {
+          setUserRole(null);
+        }
+      } catch (error) {
+        console.error("Error loading user role", error);
+      } finally {
+        setRoleLoading(false);
+      }
+    };
+
+    fetchRole();
+  }, []);
+
+  const hasBoardAccess = userRole === "admin" || userRole === "vorstand";
+
+  const renderRestrictedCard = (
+    title: string,
+    description: string,
+    Icon: LucideIcon,
+  ) => (
+    <Card className="shadow-sport">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Icon className="w-5 h-5" />
+          {title}
+        </CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-muted-foreground">
+          Sie benötigen die Rolle "Vorstand" oder "Admin", um diesen Bereich zu sehen.
+        </p>
+      </CardContent>
+    </Card>
+  );
 
   const handleSaveMessage = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -254,214 +317,266 @@ export const Communication = () => {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="shadow-sport">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Megaphone className="w-5 h-5" />
-              Vorstands-Nachrichten
-            </CardTitle>
-            <CardDescription>
-              Legen Sie neue Mitteilungen an oder aktualisieren Sie bestehende Nachrichten.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <form className="space-y-4" onSubmit={handleSaveMessage}>
-              <div className="space-y-2">
-                <Label htmlFor="message-title">Titel</Label>
-                <Input
-                  id="message-title"
-                  value={messageForm.title}
-                  onChange={(event) => setMessageForm((prev) => ({ ...prev, title: event.target.value }))}
-                  placeholder="z.B. Trainingszeiten aktualisiert"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="message-content">Inhalt</Label>
-                <Textarea
-                  id="message-content"
-                  value={messageForm.content}
-                  onChange={(event) =>
-                    setMessageForm((prev) => ({ ...prev, content: event.target.value }))
-                  }
-                  placeholder="Beschreiben Sie die wichtigsten Punkte..."
-                  rows={4}
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                {editingMessageId && (
-                  <Button type="button" variant="outline" onClick={() => {
-                    setEditingMessageId(null);
-                    setMessageForm({ title: "", content: "" });
-                  }}>
-                    Abbrechen
-                  </Button>
-                )}
-                <Button type="submit" className="bg-gradient-primary hover:bg-primary-hover">
-                  {editingMessageId ? "Nachricht aktualisieren" : "Nachricht speichern"}
-                </Button>
-              </div>
-            </form>
+        {roleLoading ? (
+          <>
+            <Card className="shadow-sport">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Megaphone className="w-5 h-5" />
+                  Vorstands-Nachrichten
+                </CardTitle>
+                <CardDescription>
+                  Lade Berechtigungen...
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex justify-center py-12">
+                  <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary/20 border-t-primary" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="shadow-sport">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="w-5 h-5" />
+                  Vereins-Events
+                </CardTitle>
+                <CardDescription>
+                  Lade Berechtigungen...
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex justify-center py-12">
+                  <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary/20 border-t-primary" />
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        ) : hasBoardAccess ? (
+          <>
+            <Card className="shadow-sport">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Megaphone className="w-5 h-5" />
+                  Vorstands-Nachrichten
+                </CardTitle>
+                <CardDescription>
+                  Legen Sie neue Mitteilungen an oder aktualisieren Sie bestehende Nachrichten.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <form className="space-y-4" onSubmit={handleSaveMessage}>
+                  <div className="space-y-2">
+                    <Label htmlFor="message-title">Titel</Label>
+                    <Input
+                      id="message-title"
+                      value={messageForm.title}
+                      onChange={(event) => setMessageForm((prev) => ({ ...prev, title: event.target.value }))}
+                      placeholder="z.B. Trainingszeiten aktualisiert"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="message-content">Inhalt</Label>
+                    <Textarea
+                      id="message-content"
+                      value={messageForm.content}
+                      onChange={(event) =>
+                        setMessageForm((prev) => ({ ...prev, content: event.target.value }))
+                      }
+                      placeholder="Beschreiben Sie die wichtigsten Punkte..."
+                      rows={4}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    {editingMessageId && (
+                      <Button type="button" variant="outline" onClick={() => {
+                        setEditingMessageId(null);
+                        setMessageForm({ title: "", content: "" });
+                      }}>
+                        Abbrechen
+                      </Button>
+                    )}
+                    <Button type="submit" className="bg-gradient-primary hover:bg-primary-hover">
+                      {editingMessageId ? "Nachricht aktualisieren" : "Nachricht speichern"}
+                    </Button>
+                  </div>
+                </form>
 
-            <div className="space-y-3">
-              {messages.map((message) => (
-                <Card key={message.id} className="border border-border/60">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <CardTitle className="text-lg">{message.title}</CardTitle>
-                        <p className="text-xs text-muted-foreground">veröffentlicht am {message.createdAt}</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="text-muted-foreground"
-                          onClick={() => handleEditMessage(message.id)}
-                          aria-label="Nachricht bearbeiten"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="text-muted-foreground hover:text-destructive"
-                          onClick={() => handleDeleteMessage(message.id)}
-                          aria-label="Nachricht löschen"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                      {message.content}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sport">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="w-5 h-5" />
-              Vereins-Events
-            </CardTitle>
-            <CardDescription>
-              Planen Sie Termine und informieren Sie alle Mitglieder über wichtige Ereignisse.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <form className="space-y-4" onSubmit={handleSaveEvent}>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="event-title">Eventtitel</Label>
-                  <Input
-                    id="event-title"
-                    value={eventForm.title}
-                    onChange={(event) => setEventForm((prev) => ({ ...prev, title: event.target.value }))}
-                    placeholder="z.B. Saisonauftakt"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="event-date">Datum</Label>
-                  <Input
-                    id="event-date"
-                    type="date"
-                    value={eventForm.date}
-                    onChange={(event) => setEventForm((prev) => ({ ...prev, date: event.target.value }))}
-                  />
-                </div>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="event-location">Ort</Label>
-                  <Input
-                    id="event-location"
-                    value={eventForm.location}
-                    onChange={(event) => setEventForm((prev) => ({ ...prev, location: event.target.value }))}
-                    placeholder="Sporthalle, Vereinsheim..."
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="event-description">Beschreibung</Label>
-                  <Textarea
-                    id="event-description"
-                    value={eventForm.description}
-                    onChange={(event) =>
-                      setEventForm((prev) => ({ ...prev, description: event.target.value }))
-                    }
-                    rows={2}
-                    placeholder="Was erwartet die Teilnehmenden?"
-                  />
-                </div>
-              </div>
-              <div className="flex justify-end gap-2">
-                {editingEventId && (
-                  <Button type="button" variant="outline" onClick={() => {
-                    setEditingEventId(null);
-                    setEventForm({ title: "", date: "", description: "", location: "" });
-                  }}>
-                    Abbrechen
-                  </Button>
-                )}
-                <Button type="submit" className="bg-gradient-secondary hover:bg-primary-hover">
-                  {editingEventId ? "Event aktualisieren" : "Event speichern"}
-                </Button>
-              </div>
-            </form>
-
-            <div className="space-y-3">
-              {upcomingEvents.map((event) => (
-                <Card key={event.id} className="border border-border/60">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <CardTitle className="text-lg">{event.title}</CardTitle>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(event.date).toLocaleDateString("de-DE", {
-                            day: "2-digit",
-                            month: "2-digit",
-                            year: "numeric",
-                          })}
-                          {event.location ? ` · ${event.location}` : ""}
+                <div className="space-y-3">
+                  {messages.map((message) => (
+                    <Card key={message.id} className="border border-border/60">
+                      <CardHeader className="pb-2">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <CardTitle className="text-lg">{message.title}</CardTitle>
+                            <p className="text-xs text-muted-foreground">veröffentlicht am {message.createdAt}</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="text-muted-foreground"
+                              onClick={() => handleEditMessage(message.id)}
+                              aria-label="Nachricht bearbeiten"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={() => handleDeleteMessage(message.id)}
+                              aria-label="Nachricht löschen"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          {message.content}
                         </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="text-muted-foreground"
-                          onClick={() => handleEditEvent(event.id)}
-                          aria-label="Event bearbeiten"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="text-muted-foreground hover:text-destructive"
-                          onClick={() => handleDeleteEvent(event.id)}
-                          aria-label="Event löschen"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-sport">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="w-5 h-5" />
+                  Vereins-Events
+                </CardTitle>
+                <CardDescription>
+                  Planen Sie Termine und informieren Sie alle Mitglieder über wichtige Ereignisse.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <form className="space-y-4" onSubmit={handleSaveEvent}>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="event-title">Eventtitel</Label>
+                      <Input
+                        id="event-title"
+                        value={eventForm.title}
+                        onChange={(event) => setEventForm((prev) => ({ ...prev, title: event.target.value }))}
+                        placeholder="z.B. Saisonauftakt"
+                      />
                     </div>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                      {event.description || "Keine Beschreibung hinterlegt."}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                    <div className="space-y-2">
+                      <Label htmlFor="event-date">Datum</Label>
+                      <Input
+                        id="event-date"
+                        type="date"
+                        value={eventForm.date}
+                        onChange={(event) => setEventForm((prev) => ({ ...prev, date: event.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="event-location">Ort</Label>
+                      <Input
+                        id="event-location"
+                        value={eventForm.location}
+                        onChange={(event) => setEventForm((prev) => ({ ...prev, location: event.target.value }))}
+                        placeholder="Sporthalle, Vereinsheim..."
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="event-description">Beschreibung</Label>
+                      <Textarea
+                        id="event-description"
+                        value={eventForm.description}
+                        onChange={(event) =>
+                          setEventForm((prev) => ({ ...prev, description: event.target.value }))
+                        }
+                        rows={2}
+                        placeholder="Was erwartet die Teilnehmenden?"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    {editingEventId && (
+                      <Button type="button" variant="outline" onClick={() => {
+                        setEditingEventId(null);
+                        setEventForm({ title: "", date: "", description: "", location: "" });
+                      }}>
+                        Abbrechen
+                      </Button>
+                    )}
+                    <Button type="submit" className="bg-gradient-secondary hover:bg-primary-hover">
+                      {editingEventId ? "Event aktualisieren" : "Event speichern"}
+                    </Button>
+                  </div>
+                </form>
+
+                <div className="space-y-3">
+                  {upcomingEvents.map((event) => (
+                    <Card key={event.id} className="border border-border/60">
+                      <CardHeader className="pb-2">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <CardTitle className="text-lg">{event.title}</CardTitle>
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(event.date).toLocaleDateString("de-DE", {
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "numeric",
+                              })}
+                              {event.location ? ` · ${event.location}` : ""}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="text-muted-foreground"
+                              onClick={() => handleEditEvent(event.id)}
+                              aria-label="Event bearbeiten"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={() => handleDeleteEvent(event.id)}
+                              aria-label="Event löschen"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          {event.description || "Keine Beschreibung hinterlegt."}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        ) : (
+          <>
+            {renderRestrictedCard(
+              "Vorstands-Nachrichten",
+              "Legen Sie neue Mitteilungen an oder aktualisieren Sie bestehende Nachrichten.",
+              Megaphone,
+            )}
+            {renderRestrictedCard(
+              "Vereins-Events",
+              "Planen Sie Termine und informieren Sie alle Mitglieder über wichtige Ereignisse.",
+              Calendar,
+            )}
+          </>
+        )}
       </div>
 
       <Card className="shadow-sport">
