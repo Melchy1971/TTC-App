@@ -18,6 +18,13 @@ type UserProfile = {
   last_name: string | null;
   email: string | null;
   phone: string | null;
+  mobile: string | null;
+  member_number: string | null;
+  street: string | null;
+  postal_code: string | null;
+  city: string | null;
+  birthday: string | null;
+  photo_url: string | null;
   status: string;
   created_at: string;
   user_roles: { role: string }[];

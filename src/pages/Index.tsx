@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { User, Session } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
+import { Settings } from "@/components/Settings";
 
 const Index = () => {
   const [currentPage, setCurrentPage] = useState("dashboard");
@@ -60,7 +61,7 @@ const Index = () => {
       case "admin":
         return <AdminPanel />;
       case "settings":
-        return <div className="p-8"><h1 className="text-3xl font-bold">Einstellungen - Coming Soon</h1></div>;
+        return user ? <Settings user={user} /> : null;
       default:
         return <Dashboard />;
     }
