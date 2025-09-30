@@ -1,12 +1,12 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { UserPlus, Search, Mail, Phone, Shield, Crown, User, MoreVertical } from "lucide-react";
+import { UserPlus, Search, Mail, Phone, Shield, Crown, User } from "lucide-react";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
@@ -67,20 +67,27 @@ export const UserAdmin = () => {
     }
   };
 
+  const normalizeRole = (role?: string | null) => {
+    if (!role) return "player";
+    if (role === "moderator") return "captain";
+    return role;
+  };
+
   const getRoleIcon = (role: string) => {
     switch (role) {
-      case "admin": return Crown;
-      case "captain": return Shield;
-      case "trainer": return User;
-      default: return User;
+      case "admin":
+        return Crown;
+      case "captain":
+        return Shield;
+      default:
+        return User;
     }
   };
 
   const getRoleBadge = (role: string) => {
     const colors = {
       admin: "bg-gradient-primary text-primary-foreground",
-      moderator: "bg-gradient-secondary text-secondary-foreground", 
-      substitute: "bg-yellow-500 text-white",
+      captain: "bg-gradient-secondary text-secondary-foreground",
       player: "bg-muted text-muted-foreground"
     };
     return colors[role as keyof typeof colors] || colors.player;
@@ -88,6 +95,15 @@ export const UserAdmin = () => {
 
   const getStatusBadge = (status: string) => {
     return status === "active" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800";
+  };
+
+  const getRoleLabel = (role: string) => {
+    const labels: Record<string, string> = {
+      admin: "Admin",
+      captain: "Mannschaftsführer",
+      player: "Spieler"
+    };
+    return labels[role] || "Spieler";
   };
 
   const getUserDisplayName = (user: UserProfile) => {
@@ -98,7 +114,7 @@ export const UserAdmin = () => {
   };
 
   const getUserRole = (user: UserProfile) => {
-    return user.user_roles[0]?.role || 'player';
+    return normalizeRole(user.user_roles[0]?.role);
   };
 
   const handleRoleChange = async (userId: string, newRole: string) => {
@@ -188,9 +204,8 @@ export const UserAdmin = () => {
           <SelectContent>
             <SelectItem value="all">Alle Rollen</SelectItem>
             <SelectItem value="admin">Administrator</SelectItem>
-            <SelectItem value="moderator">Moderator</SelectItem>
+            <SelectItem value="captain">Mannschaftsführer</SelectItem>
             <SelectItem value="player">Spieler</SelectItem>
-            <SelectItem value="substitute">Ersatzspieler</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -219,9 +234,7 @@ export const UserAdmin = () => {
                         <h3 className="font-semibold">{displayName}</h3>
                         <Badge className={getRoleBadge(userRole)}>
                           <RoleIcon className="w-3 h-3 mr-1" />
-                          {userRole === "admin" ? "Admin" : 
-                           userRole === "moderator" ? "Moderator" :
-                           userRole === "substitute" ? "Ersatzspieler" : "Spieler"}
+                          {getRoleLabel(userRole)}
                         </Badge>
                         <Badge className={getStatusBadge(user.status)} variant="outline">
                           {user.status === "active" ? "Aktiv" : 
@@ -265,7 +278,7 @@ export const UserAdmin = () => {
                         <div className="space-y-4">
                           <div>
                             <Label>Neue Rolle</Label>
-                            <Select 
+                            <Select
                               defaultValue={userRole}
                               onValueChange={(value) => handleRoleChange(user.user_id, value)}
                             >
@@ -274,9 +287,8 @@ export const UserAdmin = () => {
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="admin">Administrator</SelectItem>
-                                <SelectItem value="moderator">Moderator (Mannschaftsführer)</SelectItem>
+                                <SelectItem value="captain">Mannschaftsführer</SelectItem>
                                 <SelectItem value="player">Spieler</SelectItem>
-                                <SelectItem value="substitute">Ersatzspieler</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
