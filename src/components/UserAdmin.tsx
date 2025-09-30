@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { UserPlus, Search, Mail, Phone, Shield, Crown, User, UsersRound } from "lucide-react";
+import { Search, Mail, Phone, Shield, Crown, User, UsersRound, UserCheck, UserCog, Trash2 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import type { Database } from "@/integrations/supabase/types";
 import { supabase } from "@/integrations/supabase/client";
@@ -46,7 +46,7 @@ type ProfileFormState = {
   status: string;
 };
 
-type DialogMode = "create" | "edit";
+type DialogMode = "create" | "edit" | "manual";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
 type NormalizedRole = "player" | "captain" | "vorstand" | "admin";
@@ -74,6 +74,7 @@ export const UserAdmin = () => {
     status: "pending"
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -261,6 +262,7 @@ export const UserAdmin = () => {
       status: "pending"
     });
     setIsSaving(false);
+    setIsDeleting(false);
   };
 
   const prepareDialogForUser = (user: UserProfile | null, mode: DialogMode) => {
@@ -284,6 +286,12 @@ export const UserAdmin = () => {
     } else {
       resetDialogState();
     }
+    setIsDialogOpen(true);
+  };
+
+  const prepareDialogForManualEntry = () => {
+    resetDialogState();
+    setDialogMode("manual");
     setIsDialogOpen(true);
   };
 
@@ -324,7 +332,7 @@ export const UserAdmin = () => {
   };
 
   const handleProfileSubmit = async () => {
-    if (!selectedUser) {
+    if (dialogMode !== "manual" && !selectedUser) {
       toast({
         title: "Kein Mitglied ausgewählt",
         description: "Bitte wählen Sie ein Mitglied aus, das bearbeitet werden soll.",
@@ -336,34 +344,66 @@ export const UserAdmin = () => {
     setIsSaving(true);
 
     try {
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({
-          first_name: formState.first_name || null,
-          last_name: formState.last_name || null,
-          email: formState.email || null,
-          phone: formState.phone || null,
-          mobile: formState.mobile || null,
-          member_number: formState.member_number || null,
-          street: formState.street || null,
-          postal_code: formState.postal_code || null,
-          city: formState.city || null,
-          birthday: formState.birthday || null,
-          status: formState.status
-        })
-        .eq('id', selectedUser.id);
+      if (dialogMode === "manual") {
+        const manualUserId = crypto.randomUUID();
 
-      if (updateError) throw updateError;
+        const { data: insertedProfile, error: insertError } = await supabase
+          .from('profiles')
+          .insert({
+            user_id: manualUserId,
+            first_name: formState.first_name || null,
+            last_name: formState.last_name || null,
+            email: formState.email || null,
+            phone: formState.phone || null,
+            mobile: formState.mobile || null,
+            member_number: formState.member_number || null,
+            street: formState.street || null,
+            postal_code: formState.postal_code || null,
+            city: formState.city || null,
+            birthday: formState.birthday || null,
+            status: formState.status || "pending"
+          })
+          .select()
+          .single();
 
-      await persistRoles(selectedUser.user_id, selectedRoles);
+        if (insertError) throw insertError;
 
-      toast({
-        title: dialogMode === "create" ? "Mitglied freigegeben" : "Profil aktualisiert",
-        description:
-          dialogMode === "create"
-            ? "Das Mitglied wurde erfolgreich freigegeben und aktualisiert."
-            : "Die Profilinformationen wurden gespeichert.",
-      });
+        await persistRoles(insertedProfile?.user_id ?? manualUserId, selectedRoles);
+
+        toast({
+          title: "Mitglied erfasst",
+          description: "Das Mitglied wurde erfolgreich erstellt und gespeichert.",
+        });
+      } else if (selectedUser) {
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({
+            first_name: formState.first_name || null,
+            last_name: formState.last_name || null,
+            email: formState.email || null,
+            phone: formState.phone || null,
+            mobile: formState.mobile || null,
+            member_number: formState.member_number || null,
+            street: formState.street || null,
+            postal_code: formState.postal_code || null,
+            city: formState.city || null,
+            birthday: formState.birthday || null,
+            status: formState.status
+          })
+          .eq('id', selectedUser.id);
+
+        if (updateError) throw updateError;
+
+        await persistRoles(selectedUser.user_id, selectedRoles);
+
+        toast({
+          title: dialogMode === "create" ? "Mitglied freigegeben" : "Profil aktualisiert",
+          description:
+            dialogMode === "create"
+              ? "Das Mitglied wurde erfolgreich freigegeben und aktualisiert."
+              : "Die Profilinformationen wurden gespeichert.",
+        });
+      }
 
       handleDialogClose(false);
       fetchUsers();
@@ -376,6 +416,45 @@ export const UserAdmin = () => {
       });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleProfileDelete = async () => {
+    if (!selectedUser) return;
+
+    setIsDeleting(true);
+
+    try {
+      const { error: rolesError } = await supabase
+        .from('user_roles')
+        .delete()
+        .eq('user_id', selectedUser.user_id);
+
+      if (rolesError) throw rolesError;
+
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', selectedUser.id);
+
+      if (profileError) throw profileError;
+
+      toast({
+        title: "Profil gelöscht",
+        description: "Das Mitgliedsprofil wurde entfernt.",
+      });
+
+      handleDialogClose(false);
+      fetchUsers();
+    } catch (error) {
+      console.error('Error deleting profile:', error);
+      toast({
+        title: "Fehler",
+        description: "Das Profil konnte nicht gelöscht werden.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -410,13 +489,23 @@ export const UserAdmin = () => {
           <h1 className="text-3xl font-bold text-foreground">Benutzerverwaltung</h1>
           <p className="text-muted-foreground">Verwalten Sie Vereinsmitglieder und deren Berechtigungen</p>
         </div>
-        <Button
-          className="bg-gradient-primary hover:bg-primary-hover shadow-sport"
-          onClick={() => prepareDialogForUser(pendingUsers[0] ?? null, "create")}
-        >
-          <UserPlus className="w-4 h-4 mr-2" />
-          Neues Mitglied
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            className="bg-muted text-muted-foreground hover:bg-muted/80"
+            variant="outline"
+            onClick={prepareDialogForManualEntry}
+          >
+            <UserCog className="w-4 h-4 mr-2" />
+            Mitglied erfassen
+          </Button>
+          <Button
+            className="bg-gradient-primary hover:bg-primary-hover shadow-sport"
+            onClick={() => prepareDialogForUser(pendingUsers[0] ?? null, "create")}
+          >
+            <UserCheck className="w-4 h-4 mr-2" />
+            Neues Mitglied
+          </Button>
+        </div>
       </div>
 
       <div className="flex gap-4 items-center">
@@ -570,15 +659,21 @@ export const UserAdmin = () => {
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-3xl lg:max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {dialogMode === "create" ? "Neues Mitglied freigeben" : "Mitgliedsprofil bearbeiten"}
+              {dialogMode === "create"
+                ? "Neues Mitglied freigeben"
+                : dialogMode === "manual"
+                  ? "Mitglied manuell erfassen"
+                  : "Mitgliedsprofil bearbeiten"}
             </DialogTitle>
             <DialogDescription>
               {dialogMode === "create"
                 ? "Weisen Sie einem neu registrierten Mitglied die richtigen Rollen zu und schalten Sie es frei."
-                : "Aktualisieren Sie die Profildaten und Rollen des Mitglieds."}
+                : dialogMode === "manual"
+                  ? "Erfassen Sie ein Mitglied vollständig manuell ohne vorherige Registrierung."
+                  : "Aktualisieren Sie die Profildaten und Rollen des Mitglieds."}
             </DialogDescription>
           </DialogHeader>
 
@@ -609,7 +704,7 @@ export const UserAdmin = () => {
             </div>
           )}
 
-          {selectedUser && (
+          {(selectedUser || dialogMode === "manual") && (
             <div className="space-y-6 pt-4">
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
@@ -755,20 +850,36 @@ export const UserAdmin = () => {
           )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => handleDialogClose(false)}>
-              Abbrechen
-            </Button>
-            <Button
-              className="bg-gradient-primary hover:bg-primary-hover"
-              onClick={handleProfileSubmit}
-              disabled={
-                isSaving ||
-                !selectedUser ||
-                (dialogMode === 'create' && pendingUsers.length === 0)
-              }
-            >
-              {isSaving ? 'Speichern...' : 'Speichern'}
-            </Button>
+            <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+              {dialogMode === "edit" && selectedUser && (
+                <Button
+                  variant="destructive"
+                  onClick={handleProfileDelete}
+                  disabled={isDeleting}
+                  className="flex items-center"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  {isDeleting ? "Löschen..." : "Profil löschen"}
+                </Button>
+              )}
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:gap-3 sm:ml-auto">
+                <Button variant="outline" onClick={() => handleDialogClose(false)}>
+                  Abbrechen
+                </Button>
+                <Button
+                  className="bg-gradient-primary hover:bg-primary-hover"
+                  onClick={handleProfileSubmit}
+                  disabled={
+                    isSaving ||
+                    (dialogMode !== 'manual' && !selectedUser) ||
+                    (dialogMode === 'create' && pendingUsers.length === 0)
+                  }
+                >
+                  {isSaving ? 'Speichern...' : 'Speichern'}
+                </Button>
+              </div>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
