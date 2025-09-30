@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      matches: {
+        Row: {
+          away_score: number | null
+          created_at: string
+          date: string
+          home_score: number | null
+          id: string
+          location: string
+          opponent: string
+          status: string
+          team: string
+          time: string
+          updated_at: string
+        }
+        Insert: {
+          away_score?: number | null
+          created_at?: string
+          date: string
+          home_score?: number | null
+          id?: string
+          location: string
+          opponent: string
+          status?: string
+          team: string
+          time: string
+          updated_at?: string
+        }
+        Update: {
+          away_score?: number | null
+          created_at?: string
+          date?: string
+          home_score?: number | null
+          id?: string
+          location?: string
+          opponent?: string
+          status?: string
+          team?: string
+          time?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string

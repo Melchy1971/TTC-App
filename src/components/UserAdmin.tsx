@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { UserPlus, Search, Mail, Phone, Shield, Crown, User, MoreVertical } from "lucide-react";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -97,6 +99,39 @@ export const UserAdmin = () => {
 
   const getUserRole = (user: UserProfile) => {
     return user.user_roles[0]?.role || 'player';
+  };
+
+  const handleRoleChange = async (userId: string, newRole: string) => {
+    try {
+      // First, delete existing roles for this user
+      const { error: deleteError } = await supabase
+        .from('user_roles')
+        .delete()
+        .eq('user_id', userId);
+      
+      if (deleteError) throw deleteError;
+
+      // Then insert the new role
+      const { error: insertError } = await supabase
+        .from('user_roles')
+        .insert([{ user_id: userId, role: newRole as any }]);
+      
+      if (insertError) throw insertError;
+
+      toast({
+        title: "Erfolg",
+        description: "Rolle wurde aktualisiert.",
+      });
+
+      fetchUsers();
+    } catch (error) {
+      console.error('Error updating role:', error);
+      toast({
+        title: "Fehler",
+        description: "Rolle konnte nicht aktualisiert werden.",
+        variant: "destructive"
+      });
+    }
   };
 
   const filteredUsers = users.filter(user => {
@@ -214,12 +249,40 @@ export const UserAdmin = () => {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm">
-                      Bearbeiten
-                    </Button>
-                    <Button variant="ghost" size="sm">
-                      <MoreVertical className="w-4 h-4" />
-                    </Button>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          Rolle ändern
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Rolle zuweisen</DialogTitle>
+                          <DialogDescription>
+                            Rolle für {displayName} ändern
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div>
+                            <Label>Neue Rolle</Label>
+                            <Select 
+                              defaultValue={userRole}
+                              onValueChange={(value) => handleRoleChange(user.user_id, value)}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="admin">Administrator</SelectItem>
+                                <SelectItem value="moderator">Moderator (Mannschaftsführer)</SelectItem>
+                                <SelectItem value="player">Spieler</SelectItem>
+                                <SelectItem value="substitute">Ersatzspieler</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
                   </div>
                 </div>
               );

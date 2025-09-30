@@ -1,7 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Home, Users, Calendar, Upload, Trophy, Settings, UserCog, Clock, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { Home, Calendar, Settings, Trophy, Shield } from "lucide-react";
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface NavigationProps {
   currentPage: string;
@@ -9,17 +10,35 @@ interface NavigationProps {
 }
 
 export const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    checkAdminStatus();
+  }, []);
+
+  const checkAdminStatus = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .single();
+      
+      if (data && data.role === 'admin') {
+        setIsAdmin(true);
+      }
+    }
+  };
+
   const menuItems = [
-    { id: "dashboard", label: "Dashboard", icon: Home },
-    { id: "teams", label: "Mannschaften", icon: Users },
-    { id: "matches", label: "Spielplan", icon: Calendar },
-    { id: "training", label: "Training", icon: Clock },
-    { id: "substitutes", label: "Ersatzstellung", icon: RefreshCw },
-    { id: "import", label: "Import", icon: Upload },
-    { id: "tournaments", label: "Turniere", icon: Trophy },
-    { id: "userAdmin", label: "Benutzerverwaltung", icon: UserCog },
-    { id: "settings", label: "Einstellungen", icon: Settings },
+    { id: "dashboard", label: "Dashboard", icon: Home, requiresAdmin: false },
+    { id: "matches", label: "Spielplan", icon: Calendar, requiresAdmin: false },
+    { id: "admin", label: "Admin-Bereich", icon: Shield, requiresAdmin: true },
+    { id: "settings", label: "Einstellungen", icon: Settings, requiresAdmin: false },
   ];
+
+  const filteredMenuItems = menuItems.filter(item => !item.requiresAdmin || isAdmin);
 
   return (
     <Card className="h-full bg-card border-r shadow-sport">
@@ -35,7 +54,7 @@ export const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
         </div>
         
         <nav className="space-y-2">
-          {menuItems.map((item) => {
+          {filteredMenuItems.map((item) => {
             const Icon = item.icon;
             return (
               <Button

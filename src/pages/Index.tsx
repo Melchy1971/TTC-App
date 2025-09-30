@@ -1,12 +1,9 @@
 import { useState, useEffect } from "react";
 import { Navigation } from "@/components/Navigation";
 import { Dashboard } from "@/components/Dashboard";
-import { Teams } from "@/components/Teams";
-import { IcsImport } from "@/components/IcsImport";
-import { UserAdmin } from "@/components/UserAdmin";
-import { TrainingPlanner } from "@/components/TrainingPlanner";
-import { SubstituteRequests } from "@/components/SubstituteRequests";
 import { AuthPage } from "@/components/AuthPage";
+import { MatchSchedule } from "@/components/MatchSchedule";
+import { AdminPanel } from "@/components/AdminPanel";
 import { supabase } from "@/integrations/supabase/client";
 import { User, Session } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
@@ -58,20 +55,10 @@ const Index = () => {
     switch (currentPage) {
       case "dashboard":
         return <Dashboard />;
-      case "teams":
-        return <Teams />;
-      case "training":
-        return <TrainingPlanner />;
-      case "substitutes":
-        return <SubstituteRequests />;
-      case "import":
-        return <IcsImport />;
-      case "userAdmin":
-        return <UserAdmin />;
       case "matches":
-        return <div className="p-8"><h1 className="text-3xl font-bold">Spielplan - Coming Soon</h1></div>;
-      case "tournaments":
-        return <div className="p-8"><h1 className="text-3xl font-bold">Turniere - Coming Soon</h1></div>;
+        return <MatchSchedule />;
+      case "admin":
+        return <AdminPanel />;
       case "settings":
         return <div className="p-8"><h1 className="text-3xl font-bold">Einstellungen - Coming Soon</h1></div>;
       default:
