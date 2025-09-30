@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Calendar, Edit, Plus, Search, Trash2, Trophy } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
@@ -9,19 +9,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { Match } from "@/types/match";
 
-type Match = {
-  id: string;
-  team: string;
-  opponent: string;
-  date: string;
-  time: string;
-  location: string;
-  home_score: number | null;
-  away_score: number | null;
-  status: string;
-  created_at: string;
-};
+const LOCAL_STORAGE_KEY = "icsImportedMatches";
+const IMPORT_EVENT = "ics-import-updated";
 
 const STATUS_LABELS: Record<string, string> = {
   scheduled: "Geplant",
@@ -32,6 +23,7 @@ const STATUS_LABELS: Record<string, string> = {
 export const MatchSchedule = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [matches, setMatches] = useState<Match[]>([]);
+  const [importedMatches, setImportedMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string>("");
   const [resultDialogOpen, setResultDialogOpen] = useState(false);
@@ -52,7 +44,26 @@ export const MatchSchedule = () => {
   useEffect(() => {
     fetchUserRole();
     fetchMatches();
-  }, []);
+    loadImportedMatches();
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === LOCAL_STORAGE_KEY) {
+        loadImportedMatches();
+      }
+    };
+
+    const handleImportUpdate = () => {
+      loadImportedMatches();
+    };
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener(IMPORT_EVENT, handleImportUpdate as EventListener);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(IMPORT_EVENT, handleImportUpdate as EventListener);
+    };
+  }, [fetchMatches, loadImportedMatches]);
 
   const fetchUserRole = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -69,15 +80,20 @@ export const MatchSchedule = () => {
     }
   };
 
-  const fetchMatches = async () => {
+  const fetchMatches = useCallback(async () => {
     try {
       const { data, error } = await supabase
-        .from("matches")
+        .from<Match>("matches")
         .select("*")
-        .order("date", { ascending: true }) as { data: Match[] | null; error: any };
+        .order("date", { ascending: true });
 
       if (error) throw error;
-      setMatches(data || []);
+      const normalized = (data || []).map((match) => ({
+        ...match,
+        time: match.time || "",
+        source: "supabase" as const
+      }));
+      setMatches(normalized);
     } catch (error) {
       console.error("Error fetching matches:", error);
       toast({
@@ -88,10 +104,39 @@ export const MatchSchedule = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
+
+  const loadImportedMatches = useCallback(() => {
+    try {
+      const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (!stored) {
+        setImportedMatches([]);
+        return;
+      }
+
+      const parsed = JSON.parse(stored) as Match[];
+      const normalized = parsed.map((match) => ({
+        ...match,
+        source: "ics" as const
+      }));
+      setImportedMatches(normalized);
+    } catch (error) {
+      console.error("Error loading ICS matches:", error);
+      setImportedMatches([]);
+    }
+  }, []);
 
   const handleSaveResult = async () => {
     if (!resultMatch) return;
+
+    if (resultMatch.source === "ics") {
+      toast({
+        title: "Nicht möglich",
+        description: "Importierte Spiele werden über den ICS-Import verwaltet.",
+        variant: "destructive"
+      });
+      return;
+    }
 
     const homeScore = parseInt(resultForm.home, 10);
     const awayScore = parseInt(resultForm.away, 10);
@@ -200,6 +245,15 @@ export const MatchSchedule = () => {
   };
 
   const handleDeleteMatch = async (match: Match) => {
+    if (match.source === "ics") {
+      toast({
+        title: "Aktion nicht verfügbar",
+        description: "Importierte Spiele können hier nicht gelöscht werden.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     const confirmDelete = window.confirm(`Soll das Spiel ${match.team} vs ${match.opponent} wirklich gelöscht werden?`);
     if (!confirmDelete) return;
 
@@ -254,6 +308,15 @@ export const MatchSchedule = () => {
   };
 
   const openEditDialog = (match: Match) => {
+    if (match.source === "ics") {
+      toast({
+        title: "Bearbeitung nicht möglich",
+        description: "Importierte Spiele können nur über den ICS-Import angepasst werden.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setMatchFormMatch(match);
     setMatchForm({
       team: match.team,
@@ -267,6 +330,15 @@ export const MatchSchedule = () => {
   };
 
   const openResultDialog = (match: Match) => {
+    if (match.source === "ics") {
+      toast({
+        title: "Bearbeitung nicht möglich",
+        description: "Importierte Spiele können nur über den ICS-Import angepasst werden.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setResultMatch(match);
     setResultForm({
       home: match.home_score !== null && match.home_score !== undefined ? String(match.home_score) : "",
@@ -282,7 +354,9 @@ export const MatchSchedule = () => {
     return userRole === "moderator";
   }, [userRole]);
 
-  const filteredMatches = matches.filter((match) => {
+  const allMatches = useMemo(() => [...matches, ...importedMatches], [matches, importedMatches]);
+
+  const filteredMatches = allMatches.filter((match) => {
     const lowerSearch = searchTerm.toLowerCase();
     return (
       match.team.toLowerCase().includes(lowerSearch) ||
@@ -344,52 +418,79 @@ export const MatchSchedule = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {sortedMatches.map((match) => (
-              <div
-                key={match.id}
-                className="flex flex-col gap-4 rounded-lg border bg-card p-4 transition-shadow hover:shadow-accent sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="flex-1">
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">
-                      {new Date(match.date).toLocaleDateString("de-DE")} um {match.time}
-                    </span>
-                    <Badge
-                      variant={match.status === "completed" ? "default" : match.status === "canceled" ? "destructive" : "outline"}
-                    >
-                      {STATUS_LABELS[match.status] || match.status}
-                    </Badge>
+            {sortedMatches.map((match) => {
+              const isImported = match.source === "ics";
+
+              return (
+                <div
+                  key={match.id}
+                  className="flex flex-col gap-4 rounded-lg border bg-card p-4 transition-shadow hover:shadow-accent sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="flex-1">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">
+                        {new Date(match.date).toLocaleDateString("de-DE")} um {match.time}
+                      </span>
+                      <Badge
+                        variant={match.status === "completed" ? "default" : match.status === "canceled" ? "destructive" : "outline"}
+                      >
+                        {STATUS_LABELS[match.status] || match.status}
+                      </Badge>
+                      {isImported && (
+                        <Badge variant="secondary">ICS-Import</Badge>
+                      )}
+                    </div>
+                    <div className="text-lg font-semibold">
+                      {match.team} vs {match.opponent}
+                    </div>
+                    <div className="text-sm text-muted-foreground">{match.location}</div>
+                    {match.description && (
+                      <div className="mt-2 whitespace-pre-line text-sm text-muted-foreground">
+                        {match.description}
+                      </div>
+                    )}
+                    {match.home_score !== null && match.away_score !== null && (
+                      <div className="mt-2 text-lg font-bold">
+                        Ergebnis: {match.home_score}:{match.away_score}
+                      </div>
+                    )}
                   </div>
-                  <div className="text-lg font-semibold">
-                    {match.team} vs {match.opponent}
-                  </div>
-                  <div className="text-sm text-muted-foreground">{match.location}</div>
-                  {match.home_score !== null && match.away_score !== null && (
-                    <div className="mt-2 text-lg font-bold">
-                      Ergebnis: {match.home_score}:{match.away_score}
+
+                  {canEdit && (
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openResultDialog(match)}
+                        disabled={isImported}
+                      >
+                        {match.home_score !== null ? <Edit className="mr-2 h-4 w-4" /> : <Trophy className="mr-2 h-4 w-4" />}
+                        {match.home_score !== null ? "Ergebnis bearbeiten" : "Ergebnis eintragen"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openEditDialog(match)}
+                        disabled={isImported}
+                      >
+                        <Edit className="mr-2 h-4 w-4" />
+                        Details bearbeiten
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleDeleteMatch(match)}
+                        disabled={isImported}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Löschen
+                      </Button>
                     </div>
                   )}
                 </div>
-
-                {canEdit && (
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <Button variant="outline" size="sm" onClick={() => openResultDialog(match)}>
-                      {match.home_score !== null ? <Edit className="mr-2 h-4 w-4" /> : <Trophy className="mr-2 h-4 w-4" />}
-                      {match.home_score !== null ? "Ergebnis bearbeiten" : "Ergebnis eintragen"}
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => openEditDialog(match)}>
-                      <Edit className="mr-2 h-4 w-4" />
-                      Details bearbeiten
-                    </Button>
-                    <Button variant="destructive" size="sm" onClick={() => handleDeleteMatch(match)}>
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Löschen
-                    </Button>
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </CardContent>
       </Card>
