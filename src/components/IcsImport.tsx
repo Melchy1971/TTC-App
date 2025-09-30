@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import { parseIcs } from "@/lib/icsParser";
 import type { Match } from "@/types/match";
 
@@ -62,6 +63,8 @@ export const IcsImport = () => {
   const [importHistory, setImportHistory] = useState<ImportHistoryItem[]>([]);
   const [importedMatches, setImportedMatches] = useState<Match[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<string>("auto");
+  const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
+  const [teamAssignmentValue, setTeamAssignmentValue] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { toast } = useToast();
@@ -99,6 +102,12 @@ export const IcsImport = () => {
       ),
     [importedMatches]
   );
+
+  useEffect(() => {
+    setSelectedMatchIds((previous) =>
+      previous.filter((id) => importedMatches.some((match) => match.id === id))
+    );
+  }, [importedMatches]);
 
   const persistMatches = (matches: Match[]) => {
     localStorage.setItem(MATCHES_KEY, JSON.stringify(matches));
@@ -161,6 +170,97 @@ export const IcsImport = () => {
       persistHistory(updated);
       return updated;
     });
+  };
+
+  const assignTeamToMatches = (team: string) => {
+    if (!importedMatches.length) {
+      toast({
+        title: "Keine Spiele vorhanden",
+        description: "Es sind keine importierten Spiele verfügbar.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const targetIds = selectedMatchIds.length
+      ? new Set(selectedMatchIds)
+      : new Set(importedMatches.map((match) => match.id));
+
+    if (!targetIds.size) {
+      toast({
+        title: "Keine Spiele ausgewählt",
+        description: "Bitte markieren Sie Spiele oder importieren Sie neue Termine.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    let updatedCount = 0;
+
+    setImportedMatches((current) => {
+      if (!current.length) {
+        return current;
+      }
+
+      const updated = current.map((match) => {
+        if (targetIds.has(match.id) && match.team !== team) {
+          updatedCount += 1;
+          return {
+            ...match,
+            team
+          } satisfies Match;
+        }
+        return match;
+      });
+
+      if (updatedCount > 0) {
+        persistMatches(updated);
+        return updated;
+      }
+
+      return current;
+    });
+
+    if (updatedCount > 0) {
+      const scopeLabel = selectedMatchIds.length
+        ? `${selectedMatchIds.length} markierten Spiele`
+        : "allen importierten Spielen";
+
+      toast({
+        title: "Mannschaft zugewiesen",
+        description: `Die Mannschaft ${team} wurde ${scopeLabel} zugeordnet.`
+      });
+    } else {
+      toast({
+        title: "Keine Aktualisierung erforderlich",
+        description: "Die ausgewählten Spiele sind bereits dieser Mannschaft zugeordnet."
+      });
+    }
+  };
+
+  const toggleMatchSelection = (matchId: string, checked: boolean) => {
+    setSelectedMatchIds((previous) => {
+      if (checked) {
+        if (previous.includes(matchId)) {
+          return previous;
+        }
+        return [...previous, matchId];
+      }
+      return previous.filter((id) => id !== matchId);
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (!sortedImportedMatches.length) {
+      setSelectedMatchIds([]);
+      return;
+    }
+
+    if (selectedMatchIds.length === sortedImportedMatches.length) {
+      setSelectedMatchIds([]);
+    } else {
+      setSelectedMatchIds(sortedImportedMatches.map((match) => match.id));
+    }
   };
 
   const processIcsContent = async (content: string, meta: FileMeta) => {
@@ -284,6 +384,18 @@ export const IcsImport = () => {
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleTeamAssignmentChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const value = event.target.value;
+    setTeamAssignmentValue(value);
+
+    if (!value) {
+      return;
+    }
+
+    assignTeamToMatches(value);
+    setTeamAssignmentValue("");
   };
 
   return (
@@ -486,29 +598,93 @@ export const IcsImport = () => {
               Noch keine Spiele importiert. Nutzen Sie den Upload, um Termine aus einer ICS-Datei zu übernehmen.
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Datum</TableHead>
-                    <TableHead>Uhrzeit</TableHead>
-                    <TableHead>Mannschaft</TableHead>
-                    <TableHead>Gegner</TableHead>
-                    <TableHead>Ort</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortedImportedMatches.map((match) => (
-                    <TableRow key={match.id}>
-                      <TableCell>{formatDate(match.date)}</TableCell>
-                      <TableCell>{match.time}</TableCell>
-                      <TableCell>{match.team}</TableCell>
-                      <TableCell>{match.opponent}</TableCell>
-                      <TableCell>{match.location}</TableCell>
+            <div className="space-y-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium" htmlFor="team-assignment">
+                    Mannschaft zuweisen
+                  </label>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <select
+                      id="team-assignment"
+                      className="w-full rounded-md border bg-background p-2 sm:w-64"
+                      value={teamAssignmentValue}
+                      onChange={handleTeamAssignmentChange}
+                    >
+                      <option value="">Team auswählen…</option>
+                      {TEAM_OPTIONS.map((team) => (
+                        <option key={team} value={team}>
+                          {team}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-xs text-muted-foreground">
+                      {selectedMatchIds.length > 0
+                        ? `${selectedMatchIds.length} Spiele markiert`
+                        : "Keine Auswahl – Zuordnung gilt für alle Spiele"}
+                    </span>
+                  </div>
+                </div>
+                <Button variant="outline" onClick={toggleSelectAll} className="self-start">
+                  {selectedMatchIds.length === sortedImportedMatches.length && sortedImportedMatches.length > 0
+                    ? "Auswahl aufheben"
+                    : "Alle auswählen"}
+                </Button>
+              </div>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[50px]">
+                        <Checkbox
+                          checked={
+                            selectedMatchIds.length === sortedImportedMatches.length &&
+                            sortedImportedMatches.length > 0
+                              ? true
+                              : selectedMatchIds.length > 0
+                                ? "indeterminate"
+                                : false
+                          }
+                          onCheckedChange={() => toggleSelectAll()}
+                          aria-label="Alle Spiele auswählen"
+                        />
+                      </TableHead>
+                      <TableHead>Datum</TableHead>
+                      <TableHead>Uhrzeit</TableHead>
+                      <TableHead>Mannschaft</TableHead>
+                      <TableHead>Gegner</TableHead>
+                      <TableHead>Ort</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {sortedImportedMatches.map((match) => {
+                      const isSelected = selectedMatchIds.includes(match.id);
+                      return (
+                        <TableRow key={match.id} className={isSelected ? "bg-primary/5" : undefined}>
+                          <TableCell>
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={(checked) => toggleMatchSelection(match.id, checked === true)}
+                              aria-label={`Spiel am ${formatDate(match.date)} markieren`}
+                            />
+                          </TableCell>
+                          <TableCell>{formatDate(match.date)}</TableCell>
+                          <TableCell>{match.time}</TableCell>
+                          <TableCell>
+                            {match.team ? (
+                              match.team
+                            ) : (
+                              <span className="text-muted-foreground italic">Keine Zuordnung</span>
+                            )}
+                          </TableCell>
+                          <TableCell>{match.opponent}</TableCell>
+                          <TableCell>{match.location}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           )}
         </CardContent>
