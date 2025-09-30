@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import TeamManagementPreview from "./pages/TeamManagementPreview";
+import CommunicationPreview from "./pages/CommunicationPreview";
 
 const queryClient = new QueryClient();
 
@@ -19,6 +20,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Index />} />
           <Route path="/preview/teams" element={<TeamManagementPreview />} />
+          <Route path="/preview/communication" element={<CommunicationPreview />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

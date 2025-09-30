@@ -9,6 +9,7 @@ import { User, Session } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
 import { Settings } from "@/components/Settings";
+import { Communication } from "@/components/Communication";
 
 const Index = () => {
   const [currentPage, setCurrentPage] = useState("dashboard");
@@ -60,6 +61,8 @@ const Index = () => {
         return <MatchSchedule />;
       case "admin":
         return <AdminPanel />;
+      case "communication":
+        return <Communication />;
       case "settings":
         return user ? <Settings user={user} /> : null;
       default:
