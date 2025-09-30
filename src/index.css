@@ -6,98 +6,97 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 210 15% 20%;
+    --background: 0 0% 98%;
+    --foreground: 0 0% 12%;
 
     --card: 0 0% 100%;
-    --card-foreground: 210 15% 20%;
+    --card-foreground: 0 0% 12%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 210 15% 20%;
+    --popover-foreground: 0 0% 12%;
 
-    /* Tischtennis Green Primary */
-    --primary: 142 76% 36%;
+    /* Vereinsfarben: Rot & Schwarz */
+    --primary: 0 78% 52%;
     --primary-foreground: 0 0% 98%;
-    --primary-hover: 142 76% 30%;
+    --primary-hover: 0 78% 44%;
 
-    /* Orange Accent */
-    --secondary: 32 95% 44%;
+    --secondary: 0 0% 14%;
     --secondary-foreground: 0 0% 98%;
-    --secondary-hover: 32 95% 38%;
+    --secondary-hover: 0 0% 10%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 0 0% 92%;
+    --muted-foreground: 0 0% 38%;
 
-    --accent: 32 95% 44%;
+    --accent: 0 78% 52%;
     --accent-foreground: 0 0% 98%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 142 76% 36%;
+    --border: 0 0% 85%;
+    --input: 0 0% 85%;
+    --ring: 0 78% 52%;
 
-    /* Sport Theme Gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(142 76% 36%), hsl(142 76% 30%));
-    --gradient-secondary: linear-gradient(135deg, hsl(32 95% 44%), hsl(32 95% 38%));
-    --gradient-hero: linear-gradient(135deg, hsl(142 76% 36%), hsl(32 95% 44%));
-    
-    /* Sport Shadows */
-    --shadow-sport: 0 10px 30px -10px hsl(142 76% 36% / 0.3);
-    --shadow-accent: 0 4px 20px -4px hsl(32 95% 44% / 0.25);
+    /* Red & Black Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(0 78% 52%), hsl(0 82% 34%));
+    --gradient-secondary: linear-gradient(135deg, hsl(0 0% 16%), hsl(0 0% 6%));
+    --gradient-hero: linear-gradient(135deg, hsl(0 78% 52%), hsl(0 0% 10%));
+
+    /* Dramatic shadows in Vereinsfarben */
+    --shadow-sport: 0 10px 30px -10px hsl(0 78% 40% / 0.45);
+    --shadow-accent: 0 4px 20px -4px hsl(0 0% 8% / 0.35);
 
     --radius: 0.5rem;
 
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-background: 0 0% 8%;
+    --sidebar-foreground: 0 0% 96%;
+    --sidebar-primary: 0 78% 52%;
     --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-accent: 0 0% 14%;
+    --sidebar-accent-foreground: 0 0% 96%;
+    --sidebar-border: 0 0% 18%;
+    --sidebar-ring: 0 78% 52%;
   }
 
   .dark {
-    --background: 210 15% 20%;
-    --foreground: 0 0% 95%;
+    --background: 0 0% 6%;
+    --foreground: 0 0% 96%;
 
-    --card: 210 15% 20%;
-    --card-foreground: 0 0% 95%;
+    --card: 0 0% 10%;
+    --card-foreground: 0 0% 96%;
 
-    --popover: 210 15% 20%;
-    --popover-foreground: 0 0% 95%;
+    --popover: 0 0% 10%;
+    --popover-foreground: 0 0% 96%;
 
-    --primary: 142 76% 36%;
+    --primary: 0 78% 52%;
     --primary-foreground: 0 0% 98%;
-    --primary-hover: 142 76% 30%;
+    --primary-hover: 0 78% 44%;
 
-    --secondary: 32 95% 44%;
-    --secondary-foreground: 0 0% 98%;
-    --secondary-hover: 32 95% 38%;
+    --secondary: 0 0% 18%;
+    --secondary-foreground: 0 0% 96%;
+    --secondary-hover: 0 0% 12%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 0 0% 18%;
+    --muted-foreground: 0 0% 68%;
 
-    --accent: 32 95% 44%;
+    --accent: 0 78% 52%;
     --accent-foreground: 0 0% 98%;
 
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 142 76% 36%;
-    
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --border: 0 0% 16%;
+    --input: 0 0% 16%;
+    --ring: 0 78% 52%;
+
+    --sidebar-background: 0 0% 6%;
+    --sidebar-foreground: 0 0% 96%;
+    --sidebar-primary: 0 78% 52%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 0 0% 16%;
+    --sidebar-accent-foreground: 0 0% 96%;
+    --sidebar-border: 0 0% 16%;
+    --sidebar-ring: 0 78% 52%;
   }
 }
 

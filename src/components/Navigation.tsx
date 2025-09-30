@@ -41,29 +41,30 @@ export const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
   const filteredMenuItems = menuItems.filter(item => !item.requiresAdmin || isAdmin);
 
   return (
-    <Card className="h-full bg-card border-r shadow-sport">
+    <Card className="h-full bg-gradient-to-b from-neutral-950 via-neutral-900 to-red-950 border-r border-red-900 shadow-sport text-white">
       <div className="p-6">
-        <div className="flex items-center gap-2 mb-8">
-          <div className="w-10 h-10 bg-gradient-primary rounded-lg flex items-center justify-center">
-            <Trophy className="w-6 h-6 text-primary-foreground" />
+        <div className="flex items-center gap-3 mb-8">
+          <div className="w-10 h-10 bg-gradient-primary rounded-lg flex items-center justify-center shadow-accent">
+            <Trophy className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-foreground">TT Verein</h1>
-            <p className="text-sm text-muted-foreground">Manager</p>
+            <h1 className="text-xl font-bold text-white">TT Verein</h1>
+            <p className="text-sm text-white/70">Manager</p>
           </div>
         </div>
-        
+
         <nav className="space-y-2">
           {filteredMenuItems.map((item) => {
             const Icon = item.icon;
+            const isActive = currentPage === item.id;
             return (
               <Button
                 key={item.id}
-                variant={currentPage === item.id ? "default" : "ghost"}
-                className={`w-full justify-start gap-3 h-12 ${
-                  currentPage === item.id 
-                    ? "bg-gradient-primary text-primary-foreground shadow-sport" 
-                    : "hover:bg-muted"
+                variant="ghost"
+                className={`w-full justify-start gap-3 h-12 transition-colors ${
+                  isActive
+                    ? "bg-gradient-primary text-white shadow-sport"
+                    : "text-white/80 hover:bg-white/10 hover:text-white"
                 }`}
                 onClick={() => onPageChange(item.id)}
               >
