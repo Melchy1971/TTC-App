@@ -67,20 +67,24 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="flex">
-        <div className="w-64 h-screen">
+    <div className="min-h-screen bg-gradient-to-br from-neutral-950 via-neutral-900 to-red-950">
+      <div className="flex min-h-screen">
+        <div className="w-64">
           <Navigation currentPage={currentPage} onPageChange={setCurrentPage} />
         </div>
-        <div className="flex-1">
-          <div className="flex justify-between items-center p-4 border-b">
-            <h1 className="text-xl font-semibold">TTC Vereinsverwaltung</h1>
-            <Button variant="outline" onClick={handleSignOut}>
+        <div className="flex-1 flex flex-col bg-white/95 backdrop-blur-lg">
+          <div className="flex justify-between items-center p-6 border-b border-red-100 bg-white/90 backdrop-blur-sm">
+            <h1 className="text-2xl font-semibold text-neutral-900">TTC Vereinsverwaltung</h1>
+            <Button
+              variant="outline"
+              className="border-red-500 text-red-600 hover:bg-red-50"
+              onClick={handleSignOut}
+            >
               <LogOut className="w-4 h-4 mr-2" />
               Abmelden
             </Button>
           </div>
-          <div className="p-8">
+          <div className="p-8 flex-1 overflow-y-auto">
             {renderPage()}
           </div>
         </div>
