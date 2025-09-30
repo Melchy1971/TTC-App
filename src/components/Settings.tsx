@@ -117,24 +117,51 @@ export const Settings = ({ user }: SettingsProps) => {
       updated_at: new Date().toISOString()
     };
 
-    const { error } = await supabase
-      .from("profiles")
-      .upsert({
-        user_id: user.id,
-        ...updatePayload
-      }, { onConflict: "user_id" });
+    try {
+      const { data: existingProfile, error: fetchError } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
 
-    if (error) {
+      if (fetchError) {
+        throw fetchError;
+      }
+
+      if (existingProfile?.id) {
+        const { error: updateError } = await supabase
+          .from("profiles")
+          .update(updatePayload)
+          .eq("user_id", user.id);
+
+        if (updateError) {
+          throw updateError;
+        }
+      } else {
+        const { error: insertError } = await supabase
+          .from("profiles")
+          .insert({
+            user_id: user.id,
+            status: "active",
+            ...updatePayload,
+            created_at: new Date().toISOString()
+          });
+
+        if (insertError) {
+          throw insertError;
+        }
+      }
+
+      toast({
+        title: "Gespeichert",
+        description: "Dein Profil wurde erfolgreich aktualisiert."
+      });
+    } catch (error) {
       console.error("Error updating profile", error);
       toast({
         title: "Fehler",
         description: "Das Profil konnte nicht gespeichert werden.",
         variant: "destructive"
-      });
-    } else {
-      toast({
-        title: "Gespeichert",
-        description: "Dein Profil wurde erfolgreich aktualisiert."
       });
     }
 
