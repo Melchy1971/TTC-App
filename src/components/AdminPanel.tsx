@@ -1,9 +1,10 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Shield, Upload, Users, Calendar } from "lucide-react";
+import { Shield, Upload, Users, Calendar, Trophy } from "lucide-react";
 import { IcsImport } from "./IcsImport";
 import { UserAdmin } from "./UserAdmin";
 import { MatchSchedule } from "./MatchSchedule";
 import { useState } from "react";
+import { TeamManagement } from "./TeamManagement";
 
 export const AdminPanel = () => {
   const [activeTab, setActiveTab] = useState("users");
@@ -23,10 +24,14 @@ export const AdminPanel = () => {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="users" className="flex items-center gap-2">
             <Users className="w-4 h-4" />
             Benutzerverwaltung
+          </TabsTrigger>
+          <TabsTrigger value="teams" className="flex items-center gap-2">
+            <Trophy className="w-4 h-4" />
+            Mannschaften
           </TabsTrigger>
           <TabsTrigger value="matches" className="flex items-center gap-2">
             <Calendar className="w-4 h-4" />
@@ -40,6 +45,10 @@ export const AdminPanel = () => {
 
         <TabsContent value="users" className="space-y-6">
           <UserAdmin />
+        </TabsContent>
+
+        <TabsContent value="teams" className="space-y-6">
+          <TeamManagement />
         </TabsContent>
 
         <TabsContent value="matches" className="space-y-6">
