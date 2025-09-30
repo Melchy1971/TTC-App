@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Match } from "@/types/match";
 
 const LOCAL_STORAGE_KEY = "icsImportedMatches";
@@ -19,6 +20,30 @@ const STATUS_LABELS: Record<string, string> = {
   completed: "Abgeschlossen",
   canceled: "Abgesagt"
 };
+
+const UNKNOWN_TEAM_LABEL = "Unbekannte Mannschaft";
+
+const getTeamLabel = (team?: string | null) => {
+  if (!team) return UNKNOWN_TEAM_LABEL;
+  const trimmed = team.trim();
+  return trimmed.length > 0 ? trimmed : UNKNOWN_TEAM_LABEL;
+};
+
+const parseMatchDate = (value?: string | null) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const matchSortValue = (value?: string | null) => {
+  const parsed = parseMatchDate(value);
+  return parsed ? parsed.getTime() : Number.MAX_SAFE_INTEGER;
+};
+
+const datesAreOnSameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() &&
+  a.getMonth() === b.getMonth() &&
+  a.getDate() === b.getDate();
 
 export const MatchSchedule = () => {
   const [searchTerm, setSearchTerm] = useState("");
@@ -39,6 +64,7 @@ export const MatchSchedule = () => {
     status: "scheduled"
   });
   const [resultForm, setResultForm] = useState({ home: "", away: "" });
+  const [activeTab, setActiveTab] = useState("overview");
   const { toast } = useToast();
 
   useEffect(() => {
@@ -354,22 +380,219 @@ export const MatchSchedule = () => {
     return userRole === "moderator";
   }, [userRole]);
 
-  const allMatches = useMemo(() => [...matches, ...importedMatches], [matches, importedMatches]);
+  const allMatches = useMemo(
+    () => [...matches, ...importedMatches],
+    [matches, importedMatches]
+  );
 
-  const filteredMatches = allMatches.filter((match) => {
+  const sortedAllMatches = useMemo(
+    () =>
+      [...allMatches].sort(
+        (a, b) => matchSortValue(a.date) - matchSortValue(b.date)
+      ),
+    [allMatches]
+  );
+
+  const filteredMatches = useMemo(() => {
     const lowerSearch = searchTerm.toLowerCase();
-    return (
-      match.team.toLowerCase().includes(lowerSearch) ||
-      match.opponent.toLowerCase().includes(lowerSearch) ||
-      match.location.toLowerCase().includes(lowerSearch)
-    );
-  });
+    if (!lowerSearch) {
+      return sortedAllMatches;
+    }
 
-  const sortedMatches = [...filteredMatches].sort((a, b) => {
-    const dateA = new Date(a.date).getTime();
-    const dateB = new Date(b.date).getTime();
-    return dateA - dateB;
-  });
+    return sortedAllMatches.filter((match) => {
+      const teamLabel = getTeamLabel(match.team);
+      return (
+        teamLabel.toLowerCase().includes(lowerSearch) ||
+        match.opponent.toLowerCase().includes(lowerSearch) ||
+        match.location.toLowerCase().includes(lowerSearch)
+      );
+    });
+  }, [sortedAllMatches, searchTerm]);
+
+  const matchesByTeam = useMemo(() => {
+    const grouped: Record<string, Match[]> = {};
+
+    filteredMatches.forEach((match) => {
+      const teamLabel = getTeamLabel(match.team);
+      if (!grouped[teamLabel]) {
+        grouped[teamLabel] = [];
+      }
+      grouped[teamLabel].push(match);
+    });
+
+    return grouped;
+  }, [filteredMatches]);
+
+  const teams = useMemo(() => {
+    const teamSet = new Set<string>();
+
+    allMatches.forEach((match) => {
+      teamSet.add(getTeamLabel(match.team));
+    });
+
+    return Array.from(teamSet).sort((a, b) => a.localeCompare(b, "de-DE"));
+  }, [allMatches]);
+
+  const currentMatchdayDate = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const upcoming = sortedAllMatches.find((match) => {
+      const matchDate = parseMatchDate(match.date);
+      if (!matchDate) return false;
+      const normalized = new Date(matchDate);
+      normalized.setHours(0, 0, 0, 0);
+      return normalized >= today;
+    });
+
+    if (upcoming) {
+      return upcoming.date;
+    }
+
+    const last = [...sortedAllMatches]
+      .reverse()
+      .find((match) => parseMatchDate(match.date));
+
+    return last ? last.date : null;
+  }, [sortedAllMatches]);
+
+  const overviewMatches = useMemo(() => {
+    if (!currentMatchdayDate) return [];
+    const reference = parseMatchDate(currentMatchdayDate);
+    if (!reference) return [];
+
+    return sortedAllMatches.filter((match) => {
+      const matchDate = parseMatchDate(match.date);
+      if (!matchDate) return false;
+      return datesAreOnSameDay(matchDate, reference);
+    });
+  }, [sortedAllMatches, currentMatchdayDate]);
+
+  const formattedMatchdayDate = useMemo(() => {
+    if (!currentMatchdayDate) return "";
+    const date = parseMatchDate(currentMatchdayDate);
+    return date ? date.toLocaleDateString("de-DE") : "";
+  }, [currentMatchdayDate]);
+
+  useEffect(() => {
+    if (activeTab === "overview") return;
+
+    if (teams.length === 0) {
+      setActiveTab("overview");
+      return;
+    }
+
+    if (!teams.includes(activeTab)) {
+      setActiveTab(teams[0]);
+    }
+  }, [teams, activeTab]);
+
+  const renderMatchCard = (match: Match) => {
+    const isImported = match.source === "ics";
+    const matchDate = parseMatchDate(match.date);
+    const formattedDate = matchDate
+      ? matchDate.toLocaleDateString("de-DE")
+      : match.date;
+    const formattedTime = match.time
+      ? match.time
+      : matchDate
+        ? matchDate.toLocaleTimeString("de-DE", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "";
+    const statusKey = match.status || "scheduled";
+    const teamLabel = getTeamLabel(match.team);
+    const opponentLabel = match.opponent || "Unbekannter Gegner";
+    const matchKey = `${match.source || "supabase"}-${
+      match.id ||
+      match.icsUid ||
+      [teamLabel, opponentLabel, match.date].filter(Boolean).join("-")
+    }`;
+
+    return (
+      <div
+        key={matchKey}
+        className="flex flex-col gap-4 rounded-lg border bg-card p-4 transition-shadow hover:shadow-accent sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div className="flex-1">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">
+              {formattedDate}
+              {formattedTime ? ` um ${formattedTime}` : ""}
+            </span>
+            <Badge
+              variant={
+                statusKey === "completed"
+                  ? "default"
+                  : statusKey === "canceled"
+                    ? "destructive"
+                    : "outline"
+              }
+            >
+              {STATUS_LABELS[statusKey] || statusKey}
+            </Badge>
+            {isImported && <Badge variant="secondary">ICS-Import</Badge>}
+          </div>
+          <div className="text-lg font-semibold">
+            {teamLabel} vs {opponentLabel}
+          </div>
+          <div className="text-sm text-muted-foreground">
+            {match.location || "Ort noch nicht festgelegt"}
+          </div>
+          {match.description && (
+            <div className="mt-2 whitespace-pre-line text-sm text-muted-foreground">
+              {match.description}
+            </div>
+          )}
+          {match.home_score !== null && match.away_score !== null && (
+            <div className="mt-2 text-lg font-bold">
+              Ergebnis: {match.home_score}:{match.away_score}
+            </div>
+          )}
+        </div>
+
+        {canEdit && (
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openResultDialog(match)}
+              disabled={isImported}
+            >
+              {match.home_score !== null ? (
+                <Edit className="mr-2 h-4 w-4" />
+              ) : (
+                <Trophy className="mr-2 h-4 w-4" />
+              )}
+              {match.home_score !== null
+                ? "Ergebnis bearbeiten"
+                : "Ergebnis eintragen"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openEditDialog(match)}
+              disabled={isImported}
+            >
+              <Edit className="mr-2 h-4 w-4" />
+              Details bearbeiten
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => handleDeleteMatch(match)}
+              disabled={isImported}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Löschen
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   if (loading) {
     return (
@@ -388,7 +611,7 @@ export const MatchSchedule = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Spielplan</h1>
           <p className="text-muted-foreground">Verwalten Sie alle Spiele und Ergebnisse</p>
@@ -411,89 +634,87 @@ export const MatchSchedule = () => {
         />
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Spiele ({sortedMatches.length})</CardTitle>
-          <CardDescription>Übersicht aller Spiele</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {sortedMatches.map((match) => {
-              const isImported = match.source === "ics";
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <TabsList className="flex w-full flex-wrap gap-2 overflow-x-auto">
+          <TabsTrigger value="overview" className="flex-shrink-0">
+            Übersicht
+          </TabsTrigger>
+          {teams.map((team) => {
+            const teamMatchesCount = matchesByTeam[team]?.length ?? 0;
+            return (
+              <TabsTrigger
+                key={team}
+                value={team}
+                className="flex-shrink-0 items-center gap-2"
+              >
+                <span>{team}</span>
+                {teamMatchesCount > 0 && (
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                    {teamMatchesCount}
+                  </span>
+                )}
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
 
-              return (
-                <div
-                  key={match.id}
-                  className="flex flex-col gap-4 rounded-lg border bg-card p-4 transition-shadow hover:shadow-accent sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex-1">
-                    <div className="mb-2 flex flex-wrap items-center gap-2">
-                      <Calendar className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">
-                        {new Date(match.date).toLocaleDateString("de-DE")} um {match.time}
-                      </span>
-                      <Badge
-                        variant={match.status === "completed" ? "default" : match.status === "canceled" ? "destructive" : "outline"}
-                      >
-                        {STATUS_LABELS[match.status] || match.status}
-                      </Badge>
-                      {isImported && (
-                        <Badge variant="secondary">ICS-Import</Badge>
-                      )}
-                    </div>
-                    <div className="text-lg font-semibold">
-                      {match.team} vs {match.opponent}
-                    </div>
-                    <div className="text-sm text-muted-foreground">{match.location}</div>
-                    {match.description && (
-                      <div className="mt-2 whitespace-pre-line text-sm text-muted-foreground">
-                        {match.description}
-                      </div>
-                    )}
-                    {match.home_score !== null && match.away_score !== null && (
-                      <div className="mt-2 text-lg font-bold">
-                        Ergebnis: {match.home_score}:{match.away_score}
-                      </div>
-                    )}
-                  </div>
-
-                  {canEdit && (
-                    <div className="flex flex-col gap-2 sm:flex-row">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openResultDialog(match)}
-                        disabled={isImported}
-                      >
-                        {match.home_score !== null ? <Edit className="mr-2 h-4 w-4" /> : <Trophy className="mr-2 h-4 w-4" />}
-                        {match.home_score !== null ? "Ergebnis bearbeiten" : "Ergebnis eintragen"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openEditDialog(match)}
-                        disabled={isImported}
-                      >
-                        <Edit className="mr-2 h-4 w-4" />
-                        Details bearbeiten
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleDeleteMatch(match)}
-                        disabled={isImported}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Löschen
-                      </Button>
-                    </div>
-                  )}
+        <TabsContent value="overview" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Aktueller Spieltag</CardTitle>
+              <CardDescription>
+                {formattedMatchdayDate
+                  ? `Alle Spiele am ${formattedMatchdayDate}`
+                  : "Aktuell sind keine Spiele geplant."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {overviewMatches.length > 0 ? (
+                <div className="space-y-4">
+                  {overviewMatches.map(renderMatchCard)}
                 </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Es liegen keine Spiele für den aktuellen Spieltag vor.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {teams.map((team) => {
+          const teamMatches = matchesByTeam[team] ?? [];
+          return (
+            <TabsContent key={team} value={team} className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>{team}</CardTitle>
+                  <CardDescription>
+                    {teamMatches.length > 0
+                      ? "Alle Spielpaarungen dieser Mannschaft."
+                      : searchTerm
+                        ? "Keine Spiele passend zur Suche gefunden."
+                        : "Für diese Mannschaft wurden noch keine Spiele erfasst."}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {teamMatches.length > 0 ? (
+                    <div className="space-y-4">
+                      {teamMatches.map(renderMatchCard)}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      {searchTerm
+                        ? "Passen Sie den Suchbegriff an, um weitere Spiele anzuzeigen."
+                        : "Legen Sie neue Spiele an oder importieren Sie einen Spielplan."}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          );
+        })}
+      </Tabs>
 
       <Dialog
         open={resultDialogOpen}
