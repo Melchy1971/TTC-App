@@ -7,6 +7,7 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import TeamManagementPreview from "./pages/TeamManagementPreview";
 import CommunicationPreview from "./pages/CommunicationPreview";
+import TeamOverviewPreview from "./pages/TeamOverviewPreview";
 
 const queryClient = new QueryClient();
 
@@ -21,6 +22,7 @@ const App = () => (
           <Route path="/auth" element={<Index />} />
           <Route path="/preview/teams" element={<TeamManagementPreview />} />
           <Route path="/preview/communication" element={<CommunicationPreview />} />
+          <Route path="/preview/team-overview" element={<TeamOverviewPreview />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
