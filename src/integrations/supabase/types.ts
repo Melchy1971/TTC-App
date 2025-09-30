@@ -62,8 +62,15 @@ export type Database = {
           email: string | null
           first_name: string | null
           id: string
+          member_number: string | null
           last_name: string | null
+          mobile: string | null
+          photo_url: string | null
           phone: string | null
+          postal_code: string | null
+          street: string | null
+          city: string | null
+          birthday: string | null
           status: string | null
           updated_at: string
           user_id: string
@@ -73,8 +80,15 @@ export type Database = {
           email?: string | null
           first_name?: string | null
           id?: string
+          member_number?: string | null
           last_name?: string | null
+          mobile?: string | null
+          photo_url?: string | null
           phone?: string | null
+          postal_code?: string | null
+          street?: string | null
+          city?: string | null
+          birthday?: string | null
           status?: string | null
           updated_at?: string
           user_id: string
@@ -84,8 +98,15 @@ export type Database = {
           email?: string | null
           first_name?: string | null
           id?: string
+          member_number?: string | null
           last_name?: string | null
+          mobile?: string | null
+          photo_url?: string | null
           phone?: string | null
+          postal_code?: string | null
+          street?: string | null
+          city?: string | null
+          birthday?: string | null
           status?: string | null
           updated_at?: string
           user_id?: string
