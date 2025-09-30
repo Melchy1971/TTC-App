@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter as DialogFooterPrimitive, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, Crown, Flag, Layers, Plus, ShieldCheck, Users } from "lucide-react";
+import { Calendar, Crown, Flag, Layers, Pencil, Plus, ShieldCheck, Trash2, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Member = {
@@ -21,13 +21,24 @@ type Member = {
   isCaptain?: boolean;
 };
 
+type TrainingSlot = {
+  day: string;
+  time: string;
+};
+
+type HomeMatchInfo = {
+  day: string;
+  time: string;
+  location: string;
+};
+
 type Team = {
   id: string;
   name: string;
   league: string;
-  division: string;
-  trainingDay: string;
-  homeMatch?: string;
+  division?: string;
+  trainingSlots: TrainingSlot[];
+  homeMatch?: HomeMatchInfo;
   members: Member[];
 };
 
@@ -48,6 +59,19 @@ type SeasonDefinition = {
   teams: Team[];
   assignments: Record<string, string[]>;
   captains: Record<string, string>;
+};
+
+type TeamFormState = {
+  name: string;
+  league: string;
+  division: string;
+  trainingDay1: string;
+  trainingTime1: string;
+  trainingDay2: string;
+  trainingTime2: string;
+  homeMatchDay: string;
+  homeMatchTime: string;
+  homeMatchLocation: string;
 };
 
 const clubMembers: Omit<Member, "isCaptain">[] = [
@@ -73,8 +97,11 @@ const seasonTemplates: Record<string, SeasonDefinition> = {
         name: "Herren I",
         league: "Verbandsliga Süd",
         division: "Staffel A",
-        trainingDay: "Dienstag 19:30",
-        homeMatch: "Samstag 18:00",
+        trainingSlots: [
+          { day: "Dienstag", time: "19:30" },
+          { day: "Donnerstag", time: "19:00" }
+        ],
+        homeMatch: { day: "Samstag", time: "18:00", location: "Heimhalle Süd" },
         members: []
       },
       {
@@ -82,8 +109,11 @@ const seasonTemplates: Record<string, SeasonDefinition> = {
         name: "Herren II",
         league: "Bezirksliga",
         division: "Staffel B",
-        trainingDay: "Donnerstag 20:00",
-        homeMatch: "Freitag 19:30",
+        trainingSlots: [
+          { day: "Montag", time: "20:00" },
+          { day: "Donnerstag", time: "20:00" }
+        ],
+        homeMatch: { day: "Freitag", time: "19:30", location: "Sportzentrum Mitte" },
         members: []
       },
       {
@@ -91,8 +121,11 @@ const seasonTemplates: Record<string, SeasonDefinition> = {
         name: "Damen I",
         league: "Bezirksoberliga",
         division: "Staffel Süd",
-        trainingDay: "Mittwoch 19:00",
-        homeMatch: "Sonntag 11:00",
+        trainingSlots: [
+          { day: "Mittwoch", time: "19:00" },
+          { day: "Freitag", time: "18:30" }
+        ],
+        homeMatch: { day: "Sonntag", time: "11:00", location: "TTC Arena" },
         members: []
       }
     ],
@@ -114,8 +147,11 @@ const seasonTemplates: Record<string, SeasonDefinition> = {
         name: "Herren I",
         league: "Verbandsliga Süd",
         division: "Staffel A",
-        trainingDay: "Dienstag 19:30",
-        homeMatch: "Samstag 18:00",
+        trainingSlots: [
+          { day: "Dienstag", time: "19:30" },
+          { day: "Donnerstag", time: "19:00" }
+        ],
+        homeMatch: { day: "Samstag", time: "18:00", location: "Heimhalle Süd" },
         members: []
       },
       {
@@ -123,8 +159,11 @@ const seasonTemplates: Record<string, SeasonDefinition> = {
         name: "Herren II",
         league: "Bezirksliga",
         division: "Staffel B",
-        trainingDay: "Donnerstag 19:30",
-        homeMatch: "Freitag 19:00",
+        trainingSlots: [
+          { day: "Montag", time: "20:00" },
+          { day: "Donnerstag", time: "20:00" }
+        ],
+        homeMatch: { day: "Freitag", time: "19:00", location: "Sportzentrum Mitte" },
         members: []
       }
     ],
@@ -185,6 +224,29 @@ const initialSeasonStates = Object.fromEntries(
   ])
 ) as Record<string, SeasonState>;
 
+const WEEKDAYS = [
+  "Montag",
+  "Dienstag",
+  "Mittwoch",
+  "Donnerstag",
+  "Freitag",
+  "Samstag",
+  "Sonntag"
+];
+
+const createEmptyTeamForm = (): TeamFormState => ({
+  name: "",
+  league: "",
+  division: "",
+  trainingDay1: "",
+  trainingTime1: "",
+  trainingDay2: "",
+  trainingTime2: "",
+  homeMatchDay: "",
+  homeMatchTime: "",
+  homeMatchLocation: ""
+});
+
 export const TeamManagement = () => {
   const { toast } = useToast();
   const [seasonStates, setSeasonStates] = useState<Record<string, SeasonState>>(initialSeasonStates);
@@ -198,9 +260,24 @@ export const TeamManagement = () => {
   const [newSeasonEnd, setNewSeasonEnd] = useState("");
   const [availableSearch, setAvailableSearch] = useState("");
   const [selectedTargetTeam, setSelectedTargetTeam] = useState<string>("");
+  const [isTeamDialogOpen, setIsTeamDialogOpen] = useState(false);
+  const [teamForm, setTeamForm] = useState<TeamFormState>(createEmptyTeamForm());
+  const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
 
   const selectedSeason = seasonList.find((season) => season.id === selectedSeasonId);
   const selectedState = seasonStates[selectedSeasonId];
+  const isCurrentSeason = Boolean(selectedSeason?.isCurrent);
+  const showSeasonLockedToast = () =>
+    toast({
+      title: "Bearbeitung nicht möglich",
+      description: "Vergangene Saisons können nur von Administratoren bearbeitet werden.",
+      variant: "destructive"
+    });
+  const updateTeamForm = (field: keyof TeamFormState, value: string) =>
+    setTeamForm((prev) => ({
+      ...prev,
+      [field]: value
+    }));
 
   const filteredAvailableMembers = useMemo(() => {
     if (!selectedState) return [];
@@ -213,6 +290,10 @@ export const TeamManagement = () => {
   }, [availableSearch, selectedState]);
 
   const handleAssignMember = (teamId: string, memberId: string) => {
+    if (!isCurrentSeason) {
+      showSeasonLockedToast();
+      return;
+    }
     if (!selectedState) return;
 
     setSeasonStates((prev) => {
@@ -248,6 +329,10 @@ export const TeamManagement = () => {
   };
 
   const handleRemoveMember = (teamId: string, memberId: string) => {
+    if (!isCurrentSeason) {
+      showSeasonLockedToast();
+      return;
+    }
     if (!selectedState) return;
 
     setSeasonStates((prev) => {
@@ -294,6 +379,10 @@ export const TeamManagement = () => {
   };
 
   const handleSetCaptain = (teamId: string, memberId: string) => {
+    if (!isCurrentSeason) {
+      showSeasonLockedToast();
+      return;
+    }
     if (!selectedState) return;
 
     setSeasonStates((prev) => {
@@ -330,6 +419,196 @@ export const TeamManagement = () => {
         description: `${newCaptain.name} ist jetzt Mannschaftsführer${newCaptain.name.endsWith("a") ? "in" : ""}.`
       });
     }
+  };
+
+  const resetTeamDialog = () => {
+    setTeamForm(createEmptyTeamForm());
+    setEditingTeamId(null);
+  };
+
+  const handleOpenCreateTeam = () => {
+    if (!isCurrentSeason) {
+      showSeasonLockedToast();
+      return;
+    }
+    resetTeamDialog();
+    setIsTeamDialogOpen(true);
+  };
+
+  const handleEditTeam = (teamId: string) => {
+    if (!selectedState) return;
+    if (!isCurrentSeason) {
+      showSeasonLockedToast();
+      return;
+    }
+
+    const teamToEdit = selectedState.teams.find((team) => team.id === teamId);
+    if (!teamToEdit) return;
+
+    setTeamForm({
+      name: teamToEdit.name,
+      league: teamToEdit.league,
+      division: teamToEdit.division ?? "",
+      trainingDay1: teamToEdit.trainingSlots[0]?.day ?? "",
+      trainingTime1: teamToEdit.trainingSlots[0]?.time ?? "",
+      trainingDay2: teamToEdit.trainingSlots[1]?.day ?? "",
+      trainingTime2: teamToEdit.trainingSlots[1]?.time ?? "",
+      homeMatchDay: teamToEdit.homeMatch?.day ?? "",
+      homeMatchTime: teamToEdit.homeMatch?.time ?? "",
+      homeMatchLocation: teamToEdit.homeMatch?.location ?? ""
+    });
+    setEditingTeamId(teamId);
+    setIsTeamDialogOpen(true);
+  };
+
+  const handleSaveTeam = () => {
+    if (!selectedState) return;
+    if (!isCurrentSeason) {
+      showSeasonLockedToast();
+      return;
+    }
+
+    if (!teamForm.name.trim() || !teamForm.league.trim()) {
+      toast({
+        title: "Angaben unvollständig",
+        description: "Bitte geben Sie mindestens Mannschaftsname und Spielklasse an.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const hasTraining1 = teamForm.trainingDay1 && teamForm.trainingTime1;
+    const hasTraining2 = teamForm.trainingDay2 && teamForm.trainingTime2;
+    const training1Partial =
+      (teamForm.trainingDay1 && !teamForm.trainingTime1) || (!teamForm.trainingDay1 && teamForm.trainingTime1);
+    const training2Partial =
+      (teamForm.trainingDay2 && !teamForm.trainingTime2) || (!teamForm.trainingDay2 && teamForm.trainingTime2);
+
+    if (training1Partial || training2Partial) {
+      toast({
+        title: "Trainingstag unvollständig",
+        description: "Bitte geben Sie für Trainingstage immer Wochentag und Uhrzeit an.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const trainingSlots: TrainingSlot[] = [];
+    if (hasTraining1) {
+      trainingSlots.push({ day: teamForm.trainingDay1, time: teamForm.trainingTime1.trim() });
+    }
+    if (hasTraining2) {
+      trainingSlots.push({ day: teamForm.trainingDay2, time: teamForm.trainingTime2.trim() });
+    }
+
+    if (trainingSlots.length === 0) {
+      toast({
+        title: "Training fehlt",
+        description: "Bitte hinterlegen Sie mindestens einen Trainingstag mit Uhrzeit.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const homeMatchValues = [teamForm.homeMatchDay, teamForm.homeMatchTime, teamForm.homeMatchLocation];
+    const hasHomeMatchInformation = homeMatchValues.some((value) => value.trim() !== "");
+    if (hasHomeMatchInformation && homeMatchValues.some((value) => !value.trim())) {
+      toast({
+        title: "Heimspiel unvollständig",
+        description: "Bitte geben Sie für den Heimspieltermin Tag, Uhrzeit und Spielort an oder lassen Sie alle Felder leer.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const homeMatch = hasHomeMatchInformation
+      ? {
+          day: teamForm.homeMatchDay,
+          time: teamForm.homeMatchTime.trim(),
+          location: teamForm.homeMatchLocation.trim()
+        }
+      : undefined;
+
+    setSeasonStates((prev) => {
+      const season = prev[selectedSeasonId];
+      if (!season) return prev;
+
+      const updatedTeams = editingTeamId
+        ? season.teams.map((team) =>
+            team.id === editingTeamId
+              ? {
+                  ...team,
+                  name: teamForm.name.trim(),
+                  league: teamForm.league.trim(),
+                  division: teamForm.division.trim() || undefined,
+                  trainingSlots,
+                  homeMatch
+                }
+              : team
+          )
+        : [
+            ...season.teams,
+            {
+              id: `team-${Date.now()}`,
+              name: teamForm.name.trim(),
+              league: teamForm.league.trim(),
+              division: teamForm.division.trim() || undefined,
+              trainingSlots,
+              homeMatch,
+              members: []
+            }
+          ];
+
+      return {
+        ...prev,
+        [selectedSeasonId]: {
+          ...season,
+          teams: updatedTeams
+        }
+      };
+    });
+
+    toast({
+      title: editingTeamId ? "Mannschaft aktualisiert" : "Mannschaft erstellt",
+      description: `${teamForm.name.trim()} wurde ${editingTeamId ? "aktualisiert" : "angelegt"}.`
+    });
+
+    setIsTeamDialogOpen(false);
+    resetTeamDialog();
+  };
+
+  const handleDeleteTeam = (teamId: string) => {
+    if (!selectedState) return;
+    if (!isCurrentSeason) {
+      showSeasonLockedToast();
+      return;
+    }
+
+    const teamToDelete = selectedState.teams.find((team) => team.id === teamId);
+    if (!teamToDelete) return;
+
+    setSeasonStates((prev) => {
+      const season = prev[selectedSeasonId];
+      if (!season) return prev;
+
+      const updatedTeams = season.teams.filter((team) => team.id !== teamId);
+      const releasedMembers = teamToDelete.members.map((member) => ({ ...member, isCaptain: false }));
+
+      return {
+        ...prev,
+        [selectedSeasonId]: {
+          teams: updatedTeams,
+          availableMembers: [...season.availableMembers, ...releasedMembers]
+        }
+      };
+    });
+
+    setSelectedTargetTeam("");
+
+    toast({
+      title: "Mannschaft gelöscht",
+      description: `${teamToDelete.name} wurde entfernt.`
+    });
   };
 
   const handleCreateSeason = () => {
@@ -479,38 +758,106 @@ export const TeamManagement = () => {
               <Badge className="bg-primary/10 text-primary border border-primary/40 flex items-center gap-1">
                 <Flag className="h-3.5 w-3.5" /> Aktuell
               </Badge>
-            )}
+          )}
           </CardHeader>
         </Card>
       )}
 
       <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
         <div className="space-y-6">
-          {selectedState?.teams.map((team) => (
-            <Card key={team.id} className="shadow-sm border-border/60">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <Users className="h-5 w-5 text-primary" />
-                      {team.name}
-                    </CardTitle>
-                    <CardDescription className="flex flex-wrap gap-2 mt-2">
-                      <Badge variant="outline" className="flex items-center gap-1">
-                        <Layers className="h-3.5 w-3.5" /> {team.league}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <h3 className="text-xl font-semibold text-foreground">Teams der Saison</h3>
+              <p className="text-sm text-muted-foreground">
+                Pflegen Sie Spielklassen, Trainingszeiten und Heimspiele für die aktuelle Saison.
+              </p>
+            </div>
+            <Button
+              onClick={handleOpenCreateTeam}
+              className={cn(
+                "bg-gradient-secondary hover:bg-secondary-hover shadow-sport",
+                !isCurrentSeason && "opacity-60"
+              )}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Neue Mannschaft
+            </Button>
+          </div>
+
+          {!isCurrentSeason && (
+            <div className="rounded-lg border border-dashed border-muted-foreground/40 bg-muted/10 p-4 text-sm text-muted-foreground">
+              Diese Saison ist archiviert. Änderungen an Mannschaften sind nur für Administratoren möglich.
+            </div>
+          )}
+
+          {selectedState && selectedState.teams.length === 0 ? (
+            <Card className="border-dashed border-muted-foreground/40 bg-muted/10">
+              <CardContent className="py-8 text-center text-muted-foreground">
+                Noch keine Mannschaften für diese Saison angelegt. Nutzen Sie „Neue Mannschaft“, um zu starten.
+              </CardContent>
+            </Card>
+          ) : (
+            selectedState?.teams.map((team) => (
+              <Card key={team.id} className="shadow-sm border-border/60">
+                <CardHeader>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Users className="h-5 w-5 text-primary" />
+                        {team.name}
+                      </CardTitle>
+                      <CardDescription className="flex flex-wrap items-center gap-2 mt-2">
+                        <Badge variant="outline" className="flex items-center gap-1">
+                          <Layers className="h-3.5 w-3.5" /> {team.league}
+                        </Badge>
+                        {team.division && <Badge variant="outline">{team.division}</Badge>}
+                        {team.trainingSlots.map((slot, index) => (
+                          <Badge key={`${team.id}-training-${index}`} variant="outline">
+                            Training {index + 1}: {slot.day} · {slot.time} Uhr
+                          </Badge>
+                        ))}
+                        {team.homeMatch && (
+                          <Badge variant="outline">
+                            Heimspiel: {team.homeMatch.day} · {team.homeMatch.time} Uhr · {team.homeMatch.location}
+                          </Badge>
+                        )}
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-secondary/10 text-secondary-foreground">
+                        {team.members.length} Spieler:innen
                       </Badge>
-                      <Badge variant="outline">{team.division}</Badge>
-                      <Badge variant="outline">Training: {team.trainingDay}</Badge>
-                      {team.homeMatch && (
-                        <Badge variant="outline">Heimspiel: {team.homeMatch}</Badge>
-                      )}
-                    </CardDescription>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEditTeam(team.id)}
+                        className={cn("hover:text-primary", !isCurrentSeason && "opacity-60")}
+                        title={
+                          isCurrentSeason
+                            ? "Mannschaft bearbeiten"
+                            : "Nur in der aktuellen Saison bearbeitbar"
+                        }
+                      >
+                        <Pencil className="h-4 w-4" />
+                        <span className="sr-only">Mannschaft bearbeiten</span>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteTeam(team.id)}
+                        className={cn("text-destructive hover:text-destructive", !isCurrentSeason && "opacity-60")}
+                        title={
+                          isCurrentSeason
+                            ? "Mannschaft löschen"
+                            : "Nur in der aktuellen Saison löschbar"
+                        }
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span className="sr-only">Mannschaft löschen</span>
+                      </Button>
+                    </div>
                   </div>
-                  <Badge className="bg-secondary/10 text-secondary-foreground">
-                    {team.members.length} Spieler:innen
-                  </Badge>
-                </div>
-              </CardHeader>
+                </CardHeader>
               <CardContent className="space-y-6">
                 <div className="space-y-4">
                   {team.members.length === 0 ? (
@@ -554,7 +901,8 @@ export const TeamManagement = () => {
                             variant={member.isCaptain ? "default" : "outline"}
                             className={cn(
                               member.isCaptain ? "bg-gradient-secondary" : "",
-                              "flex items-center gap-2"
+                              "flex items-center gap-2",
+                              !isCurrentSeason && "opacity-60"
                             )}
                             onClick={() => handleSetCaptain(team.id, member.id)}
                           >
@@ -563,30 +911,37 @@ export const TeamManagement = () => {
                           </Button>
                           <Button
                             variant="ghost"
-                            className="text-destructive hover:text-destructive"
+                            className={cn(
+                              "text-destructive hover:text-destructive",
+                              !isCurrentSeason && "opacity-60"
+                            )}
                             onClick={() => handleRemoveMember(team.id, member.id)}
                           >
                             Entfernen
                           </Button>
                         </div>
                       </div>
-                    ))
-                  )}
+            ))
+          )}
                 </div>
 
                 <div className="grid gap-2">
                   <Label>Mitglied hinzufügen</Label>
                   <Select
                     value=""
-                    disabled={selectedState.availableMembers.length === 0}
+                    disabled={!isCurrentSeason || selectedState.availableMembers.length === 0}
                     onValueChange={(value) => handleAssignMember(team.id, value)}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder={
-                        selectedState.availableMembers.length === 0
-                          ? "Keine freien Mitglieder"
-                          : "Mitglied auswählen"
-                      } />
+                      <SelectValue
+                        placeholder={
+                          !isCurrentSeason
+                            ? "Nur in aktueller Saison bearbeitbar"
+                            : selectedState.availableMembers.length === 0
+                              ? "Keine freien Mitglieder"
+                              : "Mitglied auswählen"
+                        }
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {selectedState.availableMembers.map((member) => (
@@ -599,7 +954,8 @@ export const TeamManagement = () => {
                 </div>
               </CardContent>
             </Card>
-          ))}
+          ))
+          )}
         </div>
 
         <div className="space-y-4">
@@ -640,14 +996,25 @@ export const TeamManagement = () => {
                       <div className="grid gap-2">
                         <Label className="text-xs text-muted-foreground">Mannschaft auswählen</Label>
                         <Select
-                          value={selectedTargetTeam && selectedTargetTeam.startsWith(member.id) ? selectedTargetTeam.split(":")[1] : ""}
+                          value={
+                            selectedTargetTeam && selectedTargetTeam.startsWith(member.id)
+                              ? selectedTargetTeam.split(":")[1]
+                              : ""
+                          }
+                          disabled={!isCurrentSeason}
                           onValueChange={(teamId) => {
                             setSelectedTargetTeam(`${member.id}:${teamId}`);
                             handleAssignMember(teamId, member.id);
                           }}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="Zuordnung auswählen" />
+                            <SelectValue
+                              placeholder={
+                                isCurrentSeason
+                                  ? "Zuordnung auswählen"
+                                  : "Nur in aktueller Saison bearbeitbar"
+                              }
+                            />
                           </SelectTrigger>
                           <SelectContent>
                             {selectedState?.teams.map((team) => (
@@ -674,6 +1041,155 @@ export const TeamManagement = () => {
           </Card>
         </div>
       </div>
+
+      <Dialog
+        open={isTeamDialogOpen}
+        onOpenChange={(open) => {
+          setIsTeamDialogOpen(open);
+          if (!open) {
+            resetTeamDialog();
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingTeamId ? "Mannschaft bearbeiten" : "Neue Mannschaft anlegen"}</DialogTitle>
+            <DialogDescription>
+              Hinterlegen Sie Spielklasse, Trainingszeiten und den Heimspieltermin für diese Saison.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid gap-2">
+              <Label htmlFor="team-name">Mannschaftsname</Label>
+              <Input
+                id="team-name"
+                value={teamForm.name}
+                onChange={(event) => updateTeamForm("name", event.target.value)}
+                placeholder="z. B. Herren I"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="team-league">Spielklasse</Label>
+              <Input
+                id="team-league"
+                value={teamForm.league}
+                onChange={(event) => updateTeamForm("league", event.target.value)}
+                placeholder="z. B. Verbandsliga Süd"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="team-division">Staffel / Gruppe (optional)</Label>
+              <Input
+                id="team-division"
+                value={teamForm.division}
+                onChange={(event) => updateTeamForm("division", event.target.value)}
+                placeholder="z. B. Staffel A"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Trainingstag 1</Label>
+              <div className="grid gap-2 sm:grid-cols-[2fr,1fr]">
+                <Select
+                  value={teamForm.trainingDay1}
+                  onValueChange={(value) => updateTeamForm("trainingDay1", value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Wochentag wählen" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {WEEKDAYS.map((day) => (
+                      <SelectItem key={`training-day1-${day}`} value={day}>
+                        {day}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="time"
+                  value={teamForm.trainingTime1}
+                  onChange={(event) => updateTeamForm("trainingTime1", event.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Trainingstag 2 (optional)</Label>
+              <div className="grid gap-2 sm:grid-cols-[2fr,1fr]">
+                <Select
+                  value={teamForm.trainingDay2}
+                  onValueChange={(value) => {
+                    updateTeamForm("trainingDay2", value);
+                    if (!value) {
+                      updateTeamForm("trainingTime2", "");
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Optionaler Wochentag" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Kein zweiter Termin</SelectItem>
+                    {WEEKDAYS.map((day) => (
+                      <SelectItem key={`training-day2-${day}`} value={day}>
+                        {day}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="time"
+                  value={teamForm.trainingTime2}
+                  onChange={(event) => updateTeamForm("trainingTime2", event.target.value)}
+                  disabled={!teamForm.trainingDay2}
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Heimspieltermin (optional)</Label>
+              <div className="grid gap-2 sm:grid-cols-[2fr,1fr]">
+                <Select
+                  value={teamForm.homeMatchDay}
+                  onValueChange={(value) => {
+                    updateTeamForm("homeMatchDay", value);
+                    if (!value) {
+                      updateTeamForm("homeMatchTime", "");
+                      updateTeamForm("homeMatchLocation", "");
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Wochentag auswählen" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Kein Heimspieltermin</SelectItem>
+                    {WEEKDAYS.map((day) => (
+                      <SelectItem key={`home-match-${day}`} value={day}>
+                        {day}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="time"
+                  value={teamForm.homeMatchTime}
+                  onChange={(event) => updateTeamForm("homeMatchTime", event.target.value)}
+                  disabled={!teamForm.homeMatchDay}
+                />
+              </div>
+              <Input
+                value={teamForm.homeMatchLocation}
+                onChange={(event) => updateTeamForm("homeMatchLocation", event.target.value)}
+                placeholder="Spielort, z. B. Sporthalle Musterstadt"
+                disabled={!teamForm.homeMatchDay}
+              />
+            </div>
+          </div>
+          <DialogFooterPrimitive className="sm:justify-start">
+            <Button onClick={handleSaveTeam} className="bg-gradient-primary hover:bg-primary-hover">
+              {editingTeamId ? "Änderungen speichern" : "Mannschaft speichern"}
+            </Button>
+          </DialogFooterPrimitive>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
