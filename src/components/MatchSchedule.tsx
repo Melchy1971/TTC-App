@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Calendar, Edit, Plus, Search, Trash2, Trophy } from "lucide-react";
+import { Calendar, Edit, Key, Plus, Search, Trash2, Trophy } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -10,9 +10,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Match } from "@/types/match";
+import { initialSeasons, seasonTemplates } from "@/lib/teamData";
 
 const LOCAL_STORAGE_KEY = "icsImportedMatches";
 const IMPORT_EVENT = "ics-import-updated";
+const TEAM_UPDATE_EVENT = "team-management-updated";
 
 const STATUS_LABELS: Record<string, string> = {
   scheduled: "Geplant",
@@ -48,6 +50,7 @@ export const MatchSchedule = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [matches, setMatches] = useState<Match[]>([]);
   const [importedMatches, setImportedMatches] = useState<Match[]>([]);
+  const [dbTeams, setDbTeams] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string>("");
   const [resultDialogOpen, setResultDialogOpen] = useState(false);
@@ -64,31 +67,27 @@ export const MatchSchedule = () => {
   });
   const [resultForm, setResultForm] = useState({ home: "", away: "" });
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
+  const [teamPins, setTeamPins] = useState<Record<string, { spielpin: string; spielpartie_pin: string | null }>>({});
+  const [pinsDialogOpen, setPinsDialogOpen] = useState(false);
+  const [selectedPinType, setSelectedPinType] = useState<"spielpin" | "spielpartie_pin" | null>(null);
   const { toast } = useToast();
 
-  useEffect(() => {
-    fetchUserRole();
-    fetchMatches();
-    loadImportedMatches();
+  const loadDbTeams = useCallback(async () => {
+    try {
+      const currentSeason = initialSeasons.find(s => s.isCurrent);
+      if (!currentSeason) return;
 
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === LOCAL_STORAGE_KEY) {
-        loadImportedMatches();
-      }
-    };
+      const { data, error } = await supabase
+        .from("teams")
+        .select("name")
+        .eq("season_id", currentSeason.id);
 
-    const handleImportUpdate = () => {
-      loadImportedMatches();
-    };
-
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener(IMPORT_EVENT, handleImportUpdate as EventListener);
-
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(IMPORT_EVENT, handleImportUpdate as EventListener);
-    };
-  }, [fetchMatches, loadImportedMatches]);
+      if (error) throw error;
+      setDbTeams((data || []).map(t => t.name));
+    } catch (error) {
+      console.error("Error loading teams from database:", error);
+    }
+  }, []);
 
   const fetchUserRole = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -96,11 +95,23 @@ export const MatchSchedule = () => {
       const { data } = await supabase
         .from("user_roles")
         .select("role")
-        .eq("user_id", user.id)
-        .single();
+        .eq("user_id", user.id);
 
-      if (data) {
-        setUserRole(data.role);
+      if (data && data.length > 0) {
+        // Check if user has any of the required roles
+        const hasEditRole = data.some(r => 
+          r.role === 'admin' || r.role === 'vorstand' || r.role === 'moderator' || r.role === 'mannschaftsfuehrer'
+        );
+        
+        if (hasEditRole) {
+          // Set to the first matching role for display purposes
+          const editRole = data.find(r => 
+            r.role === 'admin' || r.role === 'vorstand' || r.role === 'moderator' || r.role === 'mannschaftsfuehrer'
+          );
+          setUserRole(editRole?.role || null);
+        } else {
+          setUserRole(data[0].role);
+        }
       }
     }
   };
@@ -108,7 +119,7 @@ export const MatchSchedule = () => {
   const fetchMatches = useCallback(async () => {
     try {
       const { data, error } = await supabase
-        .from<Match>("matches")
+        .from("matches")
         .select("*")
         .order("date", { ascending: true });
 
@@ -151,10 +162,77 @@ export const MatchSchedule = () => {
     }
   }, []);
 
+  const loadAllTeamPins = useCallback(async () => {
+    try {
+      // Get all match pins
+      const { data: pins, error: pinsError } = await supabase
+        .from("match_pins")
+        .select(`
+          spielpin,
+          spielpartie_pin,
+          matches!inner(team)
+        `);
+
+      if (pinsError) throw pinsError;
+
+      // Group pins by team
+      const pinsByTeam: Record<string, { spielpin: string; spielpartie_pin: string | null }> = {};
+      if (pins) {
+        pins.forEach((pin: any) => {
+          const teamName = pin.matches?.team;
+          if (teamName && !pinsByTeam[teamName]) {
+            pinsByTeam[teamName] = {
+              spielpin: pin.spielpin,
+              spielpartie_pin: pin.spielpartie_pin
+            };
+          }
+        });
+      }
+
+      setTeamPins(pinsByTeam);
+    } catch (error) {
+      console.error("Error loading team pins:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUserRole();
+    fetchMatches();
+    loadImportedMatches();
+    loadDbTeams();
+    loadAllTeamPins();
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === LOCAL_STORAGE_KEY) {
+        loadImportedMatches();
+      }
+    };
+
+    const handleImportUpdate = () => {
+      loadImportedMatches();
+    };
+
+    const handleTeamUpdate = () => {
+      loadDbTeams();
+      loadAllTeamPins();
+    };
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener(IMPORT_EVENT, handleImportUpdate as EventListener);
+    window.addEventListener(TEAM_UPDATE_EVENT, handleTeamUpdate as EventListener);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(IMPORT_EVENT, handleImportUpdate as EventListener);
+      window.removeEventListener(TEAM_UPDATE_EVENT, handleTeamUpdate as EventListener);
+    };
+  }, [fetchMatches, loadImportedMatches, loadDbTeams, loadAllTeamPins]);
+
   const handleSaveResult = async () => {
     if (!resultMatch) return;
 
-    if (resultMatch.source === "ics") {
+    const canEditImported = userRole === "admin" || userRole === "vorstand" || userRole === "mannschaftsfuehrer";
+    if (resultMatch.source === "ics" && !canEditImported) {
       toast({
         title: "Nicht möglich",
         description: "Importierte Spiele werden über den ICS-Import verwaltet.",
@@ -176,20 +254,54 @@ export const MatchSchedule = () => {
     }
 
     try {
-      const { error } = await supabase
-        .from("matches")
-        .update({
-          home_score: homeScore,
-          away_score: awayScore,
-          status: "completed"
-        } as Partial<Match>)
-        .eq("id", resultMatch.id);
+      const isIcsMatch = resultMatch.source === "ics";
+      
+      if (isIcsMatch) {
+        // For ICS matches, create a new match in Supabase with the result
+        const { error } = await supabase
+          .from("matches")
+          .insert([{
+            team: resultMatch.team,
+            opponent: resultMatch.opponent,
+            date: resultMatch.date,
+            time: resultMatch.time || "",
+            location: resultMatch.location || "",
+            home_score: homeScore,
+            away_score: awayScore,
+            status: "completed"
+          }]);
 
-      if (error) throw error;
+        if (error) throw error;
+
+        // Remove from localStorage
+        if (resultMatch.icsUid) {
+          const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+          if (stored) {
+            const allIcsMatches = JSON.parse(stored) as Match[];
+            const filtered = allIcsMatches.filter(m => m.icsUid !== resultMatch.icsUid);
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(filtered));
+            loadImportedMatches();
+          }
+        }
+      } else {
+        // Update existing Supabase match
+        const { error } = await supabase
+          .from("matches")
+          .update({
+            home_score: homeScore,
+            away_score: awayScore,
+            status: "completed"
+          } as Partial<Match>)
+          .eq("id", resultMatch.id);
+
+        if (error) throw error;
+      }
 
       toast({
         title: "Erfolg",
-        description: "Ergebnis wurde gespeichert."
+        description: isIcsMatch 
+          ? "ICS-Spiel mit Ergebnis in den regulären Spielplan übernommen."
+          : "Ergebnis wurde gespeichert."
       });
 
       fetchMatches();
@@ -216,7 +328,10 @@ export const MatchSchedule = () => {
     }
 
     try {
-      if (matchFormMatch) {
+      const isIcsMatch = matchFormMatch?.source === "ics";
+      
+      if (matchFormMatch && !isIcsMatch) {
+        // Update existing Supabase match
         const { error } = await supabase
           .from("matches")
           .update({
@@ -236,6 +351,7 @@ export const MatchSchedule = () => {
           description: "Die Spielplandaten wurden erfolgreich aktualisiert."
         });
       } else {
+        // Create new match (either new or converted from ICS)
         const { error } = await supabase
           .from("matches")
           .insert([{
@@ -251,9 +367,22 @@ export const MatchSchedule = () => {
 
         if (error) throw error;
 
+        // If this was an ICS match, remove it from localStorage
+        if (isIcsMatch && matchFormMatch?.icsUid) {
+          const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+          if (stored) {
+            const allIcsMatches = JSON.parse(stored) as Match[];
+            const filtered = allIcsMatches.filter(m => m.icsUid !== matchFormMatch.icsUid);
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(filtered));
+            loadImportedMatches();
+          }
+        }
+
         toast({
-          title: "Spiel erstellt",
-          description: "Das Spiel wurde zum Spielplan hinzugefügt."
+          title: isIcsMatch ? "ICS-Spiel übernommen" : "Spiel erstellt",
+          description: isIcsMatch 
+            ? "Das ICS-Spiel wurde in den regulären Spielplan übernommen." 
+            : "Das Spiel wurde zum Spielplan hinzugefügt."
         });
       }
 
@@ -270,7 +399,8 @@ export const MatchSchedule = () => {
   };
 
   const handleDeleteMatch = async (match: Match) => {
-    if (match.source === "ics") {
+    const canEditImported = userRole === "admin" || userRole === "vorstand" || userRole === "mannschaftsfuehrer";
+    if (match.source === "ics" && !canEditImported) {
       toast({
         title: "Aktion nicht verfügbar",
         description: "Importierte Spiele können hier nicht gelöscht werden.",
@@ -283,19 +413,34 @@ export const MatchSchedule = () => {
     if (!confirmDelete) return;
 
     try {
-      const { error } = await supabase
-        .from("matches")
-        .delete()
-        .eq("id", match.id);
+      const isIcsMatch = match.source === "ics";
+      
+      if (isIcsMatch) {
+        // Delete from localStorage
+        if (match.icsUid) {
+          const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+          if (stored) {
+            const allIcsMatches = JSON.parse(stored) as Match[];
+            const filtered = allIcsMatches.filter(m => m.icsUid !== match.icsUid);
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(filtered));
+            loadImportedMatches();
+          }
+        }
+      } else {
+        // Delete from Supabase
+        const { error } = await supabase
+          .from("matches")
+          .delete()
+          .eq("id", match.id);
 
-      if (error) throw error;
+        if (error) throw error;
+        fetchMatches();
+      }
 
       toast({
         title: "Spiel gelöscht",
         description: "Das Spiel wurde aus dem Spielplan entfernt."
       });
-
-      fetchMatches();
     } catch (error) {
       console.error("Error deleting match:", error);
       toast({
@@ -333,7 +478,8 @@ export const MatchSchedule = () => {
   };
 
   const openEditDialog = (match: Match) => {
-    if (match.source === "ics") {
+    const canEditImported = userRole === "admin" || userRole === "vorstand" || userRole === "mannschaftsfuehrer";
+    if (match.source === "ics" && !canEditImported) {
       toast({
         title: "Bearbeitung nicht möglich",
         description: "Importierte Spiele können nur über den ICS-Import angepasst werden.",
@@ -355,7 +501,8 @@ export const MatchSchedule = () => {
   };
 
   const openResultDialog = (match: Match) => {
-    if (match.source === "ics") {
+    const canEditImported = userRole === "admin" || userRole === "vorstand" || userRole === "mannschaftsfuehrer";
+    if (match.source === "ics" && !canEditImported) {
       toast({
         title: "Bearbeitung nicht möglich",
         description: "Importierte Spiele können nur über den ICS-Import angepasst werden.",
@@ -374,9 +521,8 @@ export const MatchSchedule = () => {
 
   const canEdit = useMemo(() => {
     if (!userRole) return false;
-    if (userRole === "admin" || userRole === "captain") return true;
-    // Backwards compatibility for ältere Daten
-    return userRole === "moderator";
+    if (userRole === "admin" || userRole === "moderator" || userRole === "vorstand" || userRole === "mannschaftsfuehrer") return true;
+    return false;
   }, [userRole]);
 
   const allMatches = useMemo(
@@ -405,10 +551,10 @@ export const MatchSchedule = () => {
     return grouped;
   }, [sortedAllMatches]);
 
-  const teams = useMemo(
-    () => Object.keys(matchesByTeam).sort((a, b) => a.localeCompare(b, "de-DE")),
-    [matchesByTeam]
-  );
+  const teams = useMemo(() => {
+    // Only show teams that exist in the database for the current season
+    return dbTeams.sort((a, b) => a.localeCompare(b, "de-DE"));
+  }, [dbTeams]);
 
   const teamMatches = useMemo(() => {
     if (!selectedTeam) return [];
@@ -485,6 +631,7 @@ export const MatchSchedule = () => {
 
   const renderMatchCard = (match: Match) => {
     const isImported = match.source === "ics";
+    const canEditImported = userRole === "admin" || userRole === "vorstand" || userRole === "mannschaftsfuehrer";
     const matchDate = parseMatchDate(match.date);
     const formattedDate = matchDate
       ? matchDate.toLocaleDateString("de-DE")
@@ -552,34 +699,29 @@ export const MatchSchedule = () => {
         {canEdit && (
           <div className="flex flex-col gap-2 sm:flex-row">
             <Button
-              variant="outline"
+              variant="default"
               size="sm"
-              onClick={() => openResultDialog(match)}
-              disabled={isImported}
+              onClick={() => openEditDialog(match)}
+              disabled={isImported && !canEditImported}
+              className="bg-gradient-primary hover:bg-primary-hover"
             >
-              {match.home_score !== null ? (
-                <Edit className="mr-2 h-4 w-4" />
-              ) : (
-                <Trophy className="mr-2 h-4 w-4" />
-              )}
-              {match.home_score !== null
-                ? "Ergebnis bearbeiten"
-                : "Ergebnis eintragen"}
+              <Edit className="mr-2 h-4 w-4" />
+              Ändern
             </Button>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => openEditDialog(match)}
-              disabled={isImported}
+              onClick={() => openResultDialog(match)}
+              disabled={isImported && !canEditImported}
             >
-              <Edit className="mr-2 h-4 w-4" />
-              Details bearbeiten
+              <Trophy className="mr-2 h-4 w-4" />
+              {match.home_score !== null ? "Ergebnis ändern" : "Ergebnis"}
             </Button>
             <Button
               variant="destructive"
               size="sm"
               onClick={() => handleDeleteMatch(match)}
-              disabled={isImported}
+              disabled={isImported && !canEditImported}
             >
               <Trash2 className="mr-2 h-4 w-4" />
               Löschen
@@ -676,26 +818,63 @@ export const MatchSchedule = () => {
             </CardHeader>
             <CardContent>
               {teams.length > 0 ? (
-                <div className="flex flex-wrap gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {teams.map((team) => {
                     const teamMatchCount = matchesByTeam[team]?.length ?? 0;
+                    const hasPins = teamPins[team];
+                    const canViewPins = userRole === "admin" || userRole === "vorstand" || userRole === "mannschaftsfuehrer";
+                    
                     return (
-                      <Button
-                        key={team}
-                        variant="outline"
-                        className="flex items-center gap-3 rounded-lg border-dashed"
-                        onClick={() => {
-                          setSelectedTeam(team);
-                          setSearchTerm("");
-                        }}
-                      >
-                        <span>{team}</span>
-                        {teamMatchCount > 0 && (
-                          <Badge variant="secondary" className="ml-auto">
-                            {teamMatchCount}
-                          </Badge>
+                      <div key={team} className="flex flex-col gap-2 p-4 rounded-lg border bg-card">
+                        <Button
+                          variant="outline"
+                          className="w-full flex items-center justify-between gap-3 border-dashed"
+                          onClick={() => {
+                            setSelectedTeam(team);
+                            setSearchTerm("");
+                          }}
+                        >
+                          <span>{team}</span>
+                          {teamMatchCount > 0 && (
+                            <Badge variant="secondary">
+                              {teamMatchCount}
+                            </Badge>
+                          )}
+                        </Button>
+                        
+                        {canViewPins && hasPins && (
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1 gap-2"
+                              onClick={() => {
+                                setSelectedTeam(team);
+                                setSelectedPinType("spielpin");
+                                setPinsDialogOpen(true);
+                              }}
+                            >
+                              <Key className="h-3 w-3" />
+                              Spielpin
+                            </Button>
+                            {hasPins.spielpartie_pin && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 gap-2"
+                                onClick={() => {
+                                  setSelectedTeam(team);
+                                  setSelectedPinType("spielpartie_pin");
+                                  setPinsDialogOpen(true);
+                                }}
+                              >
+                                <Key className="h-3 w-3" />
+                                Spielcode
+                              </Button>
+                            )}
+                          </div>
                         )}
-                      </Button>
+                      </div>
                     );
                   })}
                 </div>
@@ -710,12 +889,47 @@ export const MatchSchedule = () => {
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle>{selectedTeam}</CardTitle>
-            <CardDescription>
-              {selectedTeamMatchesCount > 0
-                ? "Alle Spielpaarungen dieser Mannschaft."
-                : "Für diese Mannschaft wurden noch keine Spiele erfasst."}
-            </CardDescription>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex-1">
+                <CardTitle>{selectedTeam}</CardTitle>
+                <CardDescription>
+                  {selectedTeamMatchesCount > 0
+                    ? "Alle Spielpaarungen dieser Mannschaft."
+                    : "Für diese Mannschaft wurden noch keine Spiele erfasst."}
+                </CardDescription>
+              </div>
+              {(userRole === "admin" || userRole === "vorstand" || userRole === "mannschaftsfuehrer") && 
+               selectedTeam && teamPins[selectedTeam] && (
+                <div className="flex flex-col gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedPinType("spielpin");
+                      setPinsDialogOpen(true);
+                    }}
+                    className="gap-2"
+                  >
+                    <Key className="h-4 w-4" />
+                    Spielpin
+                  </Button>
+                  {teamPins[selectedTeam].spielpartie_pin && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedPinType("spielpartie_pin");
+                        setPinsDialogOpen(true);
+                      }}
+                      className="gap-2"
+                    >
+                      <Key className="h-4 w-4" />
+                      Spiel-Pin
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             {selectedTeamMatchesCount > 0 && (
@@ -869,6 +1083,59 @@ export const MatchSchedule = () => {
             <Button className="w-full" onClick={handleSaveMatch}>
               {matchFormMatch ? "Änderungen speichern" : "Spiel erstellen"}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={pinsDialogOpen} onOpenChange={setPinsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {selectedPinType === "spielpin" ? "Spielpin" : "Spielcode"}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedTeam && `Pin für ${selectedTeam}`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>
+                {selectedPinType === "spielpin" ? "Spielpin" : "Spielcode"}
+              </Label>
+              <div className="flex gap-2 mt-2">
+                <Input
+                  readOnly
+                  value={
+                    selectedTeam && teamPins[selectedTeam]
+                      ? selectedPinType === "spielpin"
+                        ? teamPins[selectedTeam].spielpin
+                        : teamPins[selectedTeam].spielpartie_pin || ""
+                      : ""
+                  }
+                  className="font-mono text-lg font-semibold"
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (selectedTeam && teamPins[selectedTeam]) {
+                      const pin =
+                        selectedPinType === "spielpin"
+                          ? teamPins[selectedTeam].spielpin
+                          : teamPins[selectedTeam].spielpartie_pin;
+                      if (pin) {
+                        navigator.clipboard.writeText(pin);
+                        toast({
+                          title: "Kopiert",
+                          description: "Der Pin wurde in die Zwischenablage kopiert."
+                        });
+                      }
+                    }
+                  }}
+                >
+                  Kopieren
+                </Button>
+              </div>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

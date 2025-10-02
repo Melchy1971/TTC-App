@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Home, Calendar, Settings, Trophy, Shield, MessageCircle, Users } from "lucide-react";
+import { Home, Calendar, Settings, Trophy, Shield, MessageCircle, Users, Info } from "lucide-react";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -11,9 +11,11 @@ interface NavigationProps {
 
 export const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
   const [isAdmin, setIsAdmin] = useState(false);
+  const [clubLogo, setClubLogo] = useState<string | null>(null);
 
   useEffect(() => {
     checkAdminStatus();
+    loadClubLogo();
   }, []);
 
   const checkAdminStatus = async () => {
@@ -22,10 +24,9 @@ export const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
       const { data } = await supabase
         .from('user_roles')
         .select('role')
-        .eq('user_id', user.id)
-        .single();
+        .eq('user_id', user.id);
       
-      if (data && data.role === 'admin') {
+      if (data && data.some(r => r.role === 'admin')) {
         setIsAdmin(true);
       }
     }
@@ -36,16 +37,60 @@ export const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
     { id: "teams", label: "Mannschaften", icon: Users, requiresAdmin: false },
     { id: "matches", label: "Spielplan", icon: Calendar, requiresAdmin: false },
     { id: "communication", label: "Kommunikation", icon: MessageCircle, requiresAdmin: false },
+    { id: "board", label: "Vorstand", icon: Shield, requiresBoard: true },
     { id: "admin", label: "Admin-Bereich", icon: Shield, requiresAdmin: true },
+    { id: "administrator", label: "Administrator", icon: Shield, requiresAdmin: true },
+    { id: "demo", label: "Demo", icon: Settings, requiresBoard: true },
     { id: "settings", label: "Einstellungen", icon: Settings, requiresAdmin: false },
+    { id: "info", label: "Info", icon: Info, requiresAdmin: false },
   ];
 
-  const filteredMenuItems = menuItems.filter(item => !item.requiresAdmin || isAdmin);
+  const [hasBoard, setHasBoard] = useState(false);
+
+  useEffect(() => {
+    checkBoardStatus();
+  }, []);
+
+  const checkBoardStatus = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id);
+      
+      if (data && data.some(r => r.role === 'admin' || r.role === 'vorstand')) {
+        setHasBoard(true);
+      }
+    }
+  };
+
+  const loadClubLogo = async () => {
+    try {
+      const { data } = await supabase
+        .from('club_settings')
+        .select('logo_url')
+        .limit(1)
+        .maybeSingle();
+      
+      if (data?.logo_url) {
+        setClubLogo(data.logo_url);
+      }
+    } catch (error) {
+      console.error('Error loading club logo:', error);
+    }
+  };
+
+  const filteredMenuItems = menuItems.filter(item => {
+    if (item.requiresAdmin) return isAdmin;
+    if ((item as any).requiresBoard) return hasBoard;
+    return true;
+  });
 
   return (
     <Card className="h-full bg-gradient-to-b from-neutral-950 via-neutral-900 to-red-950 border-r border-red-900 shadow-sport text-white">
       <div className="p-6">
-        <div className="flex items-center gap-3 mb-8">
+        <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 bg-gradient-primary rounded-lg flex items-center justify-center shadow-accent">
             <Trophy className="w-6 h-6 text-white" />
           </div>
@@ -54,6 +99,16 @@ export const Navigation = ({ currentPage, onPageChange }: NavigationProps) => {
             <p className="text-sm text-white/70">Manager</p>
           </div>
         </div>
+
+        {clubLogo && (
+          <div className="mb-6 flex justify-center">
+            <img
+              src={clubLogo}
+              alt="Club Logo"
+              className="h-24 w-24 object-contain"
+            />
+          </div>
+        )}
 
         <nav className="space-y-2">
           {filteredMenuItems.map((item) => {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,8 @@ import { useToast } from "@/components/ui/use-toast";
 import { Calendar, Crown, Flag, Layers, Pencil, Plus, ShieldCheck, Trash2, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Season, SeasonState } from "@/types/team";
-import { clubMembers, initialSeasonStates, initialSeasons } from "@/lib/teamData";
+import { clubMembers, initialSeasons } from "@/lib/teamData";
+import { supabase } from "@/integrations/supabase/client";
 
 type TeamFormState = {
   name: string;
@@ -24,6 +25,11 @@ type TeamFormState = {
   homeMatchDay: string;
   homeMatchTime: string;
   homeMatchLocation: string;
+};
+
+type TrainingSlot = {
+  day: string;
+  time: string;
 };
 
 const WEEKDAYS = [
@@ -49,9 +55,12 @@ const createEmptyTeamForm = (): TeamFormState => ({
   homeMatchLocation: ""
 });
 
+const TEAM_UPDATE_EVENT = "team-management-updated";
+
 export const TeamManagement = () => {
   const { toast } = useToast();
-  const [seasonStates, setSeasonStates] = useState<Record<string, SeasonState>>(initialSeasonStates);
+  const [seasonStates, setSeasonStates] = useState<Record<string, SeasonState>>({});
+  const [loading, setLoading] = useState(true);
   const [selectedSeasonId, setSelectedSeasonId] = useState<string>(
     initialSeasons.find((season) => season.isCurrent)?.id ?? initialSeasons[0]?.id
   );
@@ -69,17 +78,136 @@ export const TeamManagement = () => {
   const selectedSeason = seasonList.find((season) => season.id === selectedSeasonId);
   const selectedState = seasonStates[selectedSeasonId];
   const isCurrentSeason = Boolean(selectedSeason?.isCurrent);
+  
   const showSeasonLockedToast = () =>
     toast({
       title: "Bearbeitung nicht möglich",
       description: "Vergangene Saisons können nur von Administratoren bearbeitet werden.",
       variant: "destructive"
     });
+  
   const updateTeamForm = (field: keyof TeamFormState, value: string) =>
     setTeamForm((prev) => ({
       ...prev,
       [field]: value
     }));
+
+  // Load teams and team members from Supabase
+  const loadTeamsForSeason = async (seasonId: string) => {
+    try {
+      // First, get all user_ids with the player role
+      const { data: playerRoles, error: rolesError } = await supabase
+        .from("user_roles")
+        .select("user_id")
+        .eq("role", "player");
+
+      if (rolesError) throw rolesError;
+
+      const playerUserIds = (playerRoles || []).map(r => r.user_id);
+
+      // Then load profiles for these users
+      const { data: playerProfiles, error: playersError } = await supabase
+        .from("profiles")
+        .select("user_id, first_name, last_name, email, status")
+        .eq("status", "active")
+        .in("user_id", playerUserIds);
+
+      if (playersError) throw playersError;
+
+      const activePlayers = (playerProfiles || []).map(profile => ({
+        id: profile.user_id,
+        name: `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'Unbekannt',
+        email: profile.email || '',
+        rating: 0,
+        playStyle: undefined
+      }));
+
+      const { data: teams, error: teamsError } = await supabase
+        .from("teams")
+        .select("*")
+        .eq("season_id", seasonId);
+
+      if (teamsError) throw teamsError;
+
+      if (!teams || teams.length === 0) {
+        setSeasonStates((prev) => ({
+          ...prev,
+          [seasonId]: {
+            teams: [],
+            availableMembers: activePlayers
+          }
+        }));
+        return;
+      }
+
+      // Load team members for all teams
+      const { data: teamMembers, error: membersError } = await supabase
+        .from("team_members")
+        .select("*")
+        .in("team_id", teams.map(t => t.id));
+
+      if (membersError) throw membersError;
+
+      const assignedMemberIds = new Set(teamMembers?.map(tm => tm.member_id) || []);
+
+      const teamsWithMembers = teams.map((team) => {
+        const members = (teamMembers || [])
+          .filter(tm => tm.team_id === team.id)
+          .map(tm => {
+            const baseMember = activePlayers.find(m => m.id === tm.member_id);
+            if (!baseMember) return null;
+            return {
+              ...baseMember,
+              isCaptain: tm.is_captain
+            };
+          })
+          .filter(Boolean);
+
+        return {
+          id: team.id,
+          name: team.name,
+          league: team.league,
+          division: team.division || undefined,
+          trainingSlots: team.training_slots as any[] || [],
+          homeMatch: team.home_match as any || undefined,
+          members: members as any[]
+        };
+      });
+
+      const availableMembers = activePlayers
+        .filter(member => !assignedMemberIds.has(member.id));
+
+      setSeasonStates((prev) => ({
+        ...prev,
+        [seasonId]: {
+          teams: teamsWithMembers,
+          availableMembers
+        }
+      }));
+    } catch (error) {
+      console.error("Error loading teams:", error);
+      toast({
+        title: "Fehler",
+        description: "Mannschaften konnten nicht geladen werden.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  useEffect(() => {
+    const loadInitialData = async () => {
+      setLoading(true);
+      if (selectedSeasonId) {
+        await loadTeamsForSeason(selectedSeasonId);
+      }
+      setLoading(false);
+    };
+    loadInitialData();
+  }, [selectedSeasonId]);
+
+  const notifyTeamUpdate = () => {
+    window.dispatchEvent(new Event(TEAM_UPDATE_EVENT));
+  };
 
   const filteredAvailableMembers = useMemo(() => {
     if (!selectedState) return [];
@@ -91,134 +219,127 @@ export const TeamManagement = () => {
     );
   }, [availableSearch, selectedState]);
 
-  const handleAssignMember = (teamId: string, memberId: string) => {
+  const handleAssignMember = async (teamId: string, memberId: string) => {
     if (!isCurrentSeason) {
       showSeasonLockedToast();
       return;
     }
     if (!selectedState) return;
 
-    setSeasonStates((prev) => {
-      const season = prev[selectedSeasonId];
-      if (!season) return prev;
+    const memberToAssign = selectedState.availableMembers.find((member) => member.id === memberId);
+    if (!memberToAssign) return;
 
-      const memberToAssign = season.availableMembers.find((member) => member.id === memberId);
-      if (!memberToAssign) return prev;
+    try {
+      const { error } = await supabase
+        .from("team_members")
+        .insert([{
+          team_id: teamId,
+          member_id: memberId,
+          is_captain: false
+        }]);
 
-      const updatedTeams = season.teams.map((team) => {
-        if (team.id !== teamId) return team;
-        return {
-          ...team,
-          members: [...team.members, { ...memberToAssign, isCaptain: false }]
-        };
-      });
+      if (error) throw error;
 
-      const updatedAvailable = season.availableMembers.filter((member) => member.id !== memberId);
+      await loadTeamsForSeason(selectedSeasonId);
+      notifyTeamUpdate();
 
       toast({
         title: "Mitglied zugeordnet",
-        description: `${memberToAssign.name} wurde ${season.teams.find((team) => team.id === teamId)?.name ?? "der Mannschaft"} hinzugefügt.`
+        description: `${memberToAssign.name} wurde ${selectedState.teams.find((team) => team.id === teamId)?.name ?? "der Mannschaft"} hinzugefügt.`
       });
-
-      return {
-        ...prev,
-        [selectedSeasonId]: {
-          teams: updatedTeams,
-          availableMembers: updatedAvailable
-        }
-      };
-    });
+    } catch (error) {
+      console.error("Error assigning member:", error);
+      toast({
+        title: "Fehler",
+        description: "Mitglied konnte nicht zugeordnet werden.",
+        variant: "destructive"
+      });
+    }
   };
 
-  const handleRemoveMember = (teamId: string, memberId: string) => {
+  const handleRemoveMember = async (teamId: string, memberId: string) => {
     if (!isCurrentSeason) {
       showSeasonLockedToast();
       return;
     }
     if (!selectedState) return;
-
-    setSeasonStates((prev) => {
-      const season = prev[selectedSeasonId];
-      if (!season) return prev;
-
-      const updatedTeams = season.teams.map((team) => {
-        if (team.id !== teamId) return team;
-
-        const memberToRemove = team.members.find((member) => member.id === memberId);
-        if (!memberToRemove) return team;
-
-        return {
-          ...team,
-          members: team.members.filter((member) => member.id !== memberId)
-        };
-      });
-
-      const removedMember = season.teams
-        .find((team) => team.id === teamId)
-        ?.members.find((member) => member.id === memberId);
-
-      return {
-        ...prev,
-        [selectedSeasonId]: {
-          teams: updatedTeams,
-          availableMembers: removedMember
-            ? [...season.availableMembers, { ...removedMember, isCaptain: false }]
-            : season.availableMembers
-        }
-      };
-    });
 
     const removedMember = selectedState.teams
       .find((team) => team.id === teamId)
       ?.members.find((member) => member.id === memberId);
 
-    if (removedMember) {
+    try {
+      const { error } = await supabase
+        .from("team_members")
+        .delete()
+        .eq("team_id", teamId)
+        .eq("member_id", memberId);
+
+      if (error) throw error;
+
+      await loadTeamsForSeason(selectedSeasonId);
+      notifyTeamUpdate();
+
+      if (removedMember) {
+        toast({
+          title: "Mitglied entfernt",
+          description: `${removedMember.name} wurde aus der Mannschaft entfernt.`
+        });
+      }
+    } catch (error) {
+      console.error("Error removing member:", error);
       toast({
-        title: "Mitglied entfernt",
-        description: `${removedMember.name} wurde aus der Mannschaft entfernt.`
+        title: "Fehler",
+        description: "Mitglied konnte nicht entfernt werden.",
+        variant: "destructive"
       });
     }
   };
 
-  const handleSetCaptain = (teamId: string, memberId: string) => {
+  const handleSetCaptain = async (teamId: string, memberId: string) => {
     if (!isCurrentSeason) {
       showSeasonLockedToast();
       return;
     }
     if (!selectedState) return;
 
-    setSeasonStates((prev) => {
-      const season = prev[selectedSeasonId];
-      if (!season) return prev;
-
-      const updatedTeams = season.teams.map((team) => {
-        if (team.id !== teamId) return team;
-        return {
-          ...team,
-          members: team.members.map((member) => ({
-            ...member,
-            isCaptain: member.id === memberId
-          }))
-        };
-      });
-
-      return {
-        ...prev,
-        [selectedSeasonId]: {
-          ...season,
-          teams: updatedTeams
-        }
-      };
-    });
-
     const newCaptain = selectedState.teams
       .find((team) => team.id === teamId)
       ?.members.find((member) => member.id === memberId);
 
-    if (newCaptain) {
+    try {
+      // First, unset all captains for this team
+      const { error: unsetError } = await supabase
+        .from("team_members")
+        .update({ is_captain: false })
+        .eq("team_id", teamId);
+
+      if (unsetError) throw unsetError;
+
+      // Then set the new captain
+      const { error: setError } = await supabase
+        .from("team_members")
+        .update({ is_captain: true })
+        .eq("team_id", teamId)
+        .eq("member_id", memberId);
+
+      if (setError) throw setError;
+
+      await loadTeamsForSeason(selectedSeasonId);
+      notifyTeamUpdate();
+
+      if (newCaptain) {
+        toast({
+          title: "Mannschaftsführer gesetzt",
+          description: `${newCaptain.name} ist jetzt Mannschaftsführer${newCaptain.name.endsWith("a") ? "in" : ""}.`
+        });
+      }
+    } catch (error) {
+      console.error("Error setting captain:", error);
       toast({
-        title: "Mannschaftsführer gesetzt",
-        description: `${newCaptain.name} ist jetzt Mannschaftsführer${newCaptain.name.endsWith("a") ? "in" : ""}.`
+        title: "Fehler",
+        description: "Mannschaftsführer konnte nicht gesetzt werden.",
+        variant: "destructive"
       });
     }
   };
@@ -263,7 +384,7 @@ export const TeamManagement = () => {
     setIsTeamDialogOpen(true);
   };
 
-  const handleSaveTeam = () => {
+  const handleSaveTeam = async () => {
     if (!selectedState) return;
     if (!isCurrentSeason) {
       showSeasonLockedToast();
@@ -329,57 +450,60 @@ export const TeamManagement = () => {
           time: teamForm.homeMatchTime.trim(),
           location: teamForm.homeMatchLocation.trim()
         }
-      : undefined;
+      : null;
 
-    setSeasonStates((prev) => {
-      const season = prev[selectedSeasonId];
-      if (!season) return prev;
+    try {
+      if (editingTeamId) {
+        // Update existing team
+        const { error } = await supabase
+          .from("teams")
+          .update({
+            name: teamForm.name.trim(),
+            league: teamForm.league.trim(),
+            division: teamForm.division.trim() || null,
+            training_slots: trainingSlots,
+            home_match: homeMatch
+          })
+          .eq("id", editingTeamId);
 
-      const updatedTeams = editingTeamId
-        ? season.teams.map((team) =>
-            team.id === editingTeamId
-              ? {
-                  ...team,
-                  name: teamForm.name.trim(),
-                  league: teamForm.league.trim(),
-                  division: teamForm.division.trim() || undefined,
-                  trainingSlots,
-                  homeMatch
-                }
-              : team
-          )
-        : [
-            ...season.teams,
-            {
-              id: `team-${Date.now()}`,
-              name: teamForm.name.trim(),
-              league: teamForm.league.trim(),
-              division: teamForm.division.trim() || undefined,
-              trainingSlots,
-              homeMatch,
-              members: []
-            }
-          ];
+        if (error) throw error;
+      } else {
+        // Create new team
+        const { error } = await supabase
+          .from("teams")
+          .insert([{
+            season_id: selectedSeasonId,
+            name: teamForm.name.trim(),
+            league: teamForm.league.trim(),
+            division: teamForm.division.trim() || null,
+            training_slots: trainingSlots,
+            home_match: homeMatch
+          }]);
 
-      return {
-        ...prev,
-        [selectedSeasonId]: {
-          ...season,
-          teams: updatedTeams
-        }
-      };
-    });
+        if (error) throw error;
+      }
 
-    toast({
-      title: editingTeamId ? "Mannschaft aktualisiert" : "Mannschaft erstellt",
-      description: `${teamForm.name.trim()} wurde ${editingTeamId ? "aktualisiert" : "angelegt"}.`
-    });
+      await loadTeamsForSeason(selectedSeasonId);
+      notifyTeamUpdate();
 
-    setIsTeamDialogOpen(false);
-    resetTeamDialog();
+      toast({
+        title: editingTeamId ? "Mannschaft aktualisiert" : "Mannschaft erstellt",
+        description: `${teamForm.name.trim()} wurde ${editingTeamId ? "aktualisiert" : "angelegt"}.`
+      });
+
+      setIsTeamDialogOpen(false);
+      resetTeamDialog();
+    } catch (error) {
+      console.error("Error saving team:", error);
+      toast({
+        title: "Fehler",
+        description: "Mannschaft konnte nicht gespeichert werden.",
+        variant: "destructive"
+      });
+    }
   };
 
-  const handleDeleteTeam = (teamId: string) => {
+  const handleDeleteTeam = async (teamId: string) => {
     if (!selectedState) return;
     if (!isCurrentSeason) {
       showSeasonLockedToast();
@@ -389,28 +513,33 @@ export const TeamManagement = () => {
     const teamToDelete = selectedState.teams.find((team) => team.id === teamId);
     if (!teamToDelete) return;
 
-    setSeasonStates((prev) => {
-      const season = prev[selectedSeasonId];
-      if (!season) return prev;
+    const confirmDelete = window.confirm(`Soll die Mannschaft "${teamToDelete.name}" wirklich gelöscht werden?`);
+    if (!confirmDelete) return;
 
-      const updatedTeams = season.teams.filter((team) => team.id !== teamId);
-      const releasedMembers = teamToDelete.members.map((member) => ({ ...member, isCaptain: false }));
+    try {
+      const { error } = await supabase
+        .from("teams")
+        .delete()
+        .eq("id", teamId);
 
-      return {
-        ...prev,
-        [selectedSeasonId]: {
-          teams: updatedTeams,
-          availableMembers: [...season.availableMembers, ...releasedMembers]
-        }
-      };
-    });
+      if (error) throw error;
 
-    setSelectedTargetTeam("");
+      await loadTeamsForSeason(selectedSeasonId);
+      notifyTeamUpdate();
+      setSelectedTargetTeam("");
 
-    toast({
-      title: "Mannschaft gelöscht",
-      description: `${teamToDelete.name} wurde entfernt.`
-    });
+      toast({
+        title: "Mannschaft gelöscht",
+        description: `${teamToDelete.name} wurde entfernt.`
+      });
+    } catch (error) {
+      console.error("Error deleting team:", error);
+      toast({
+        title: "Fehler",
+        description: "Mannschaft konnte nicht gelöscht werden.",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleCreateSeason = () => {
@@ -441,7 +570,6 @@ export const TeamManagement = () => {
     };
 
     setSeasonList((prev) => [...prev, newSeason]);
-
     setSeasonStates((prev) => ({
       ...prev,
       [newSeason.id]: {
@@ -461,6 +589,21 @@ export const TeamManagement = () => {
       description: `${newSeason.label} wurde angelegt.`
     });
   };
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="animate-pulse">
+          <div className="h-8 w-1/4 rounded bg-muted mb-4"></div>
+          <div className="space-y-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-32 rounded bg-muted"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -709,7 +852,7 @@ export const TeamManagement = () => {
                             onClick={() => handleSetCaptain(team.id, member.id)}
                           >
                             <Crown className="h-4 w-4" />
-                            {member.isCaptain ? "Captain" : "Als Captain setzen"}
+                            {member.isCaptain ? "Mannschaftsführer" : "Als Mannschaftsführer setzen"}
                           </Button>
                           <Button
                             variant="ghost"
@@ -917,10 +1060,11 @@ export const TeamManagement = () => {
               <Label>Trainingstag 2 (optional)</Label>
               <div className="grid gap-2 sm:grid-cols-[2fr,1fr]">
                 <Select
-                  value={teamForm.trainingDay2}
+                  value={teamForm.trainingDay2 || "none"}
                   onValueChange={(value) => {
-                    updateTeamForm("trainingDay2", value);
-                    if (!value) {
+                    const newValue = value === "none" ? "" : value;
+                    updateTeamForm("trainingDay2", newValue);
+                    if (value === "none") {
                       updateTeamForm("trainingTime2", "");
                     }
                   }}
@@ -929,7 +1073,7 @@ export const TeamManagement = () => {
                     <SelectValue placeholder="Optionaler Wochentag" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Kein zweiter Termin</SelectItem>
+                    <SelectItem value="none">Kein zweiter Termin</SelectItem>
                     {WEEKDAYS.map((day) => (
                       <SelectItem key={`training-day2-${day}`} value={day}>
                         {day}
@@ -949,10 +1093,11 @@ export const TeamManagement = () => {
               <Label>Heimspieltermin (optional)</Label>
               <div className="grid gap-2 sm:grid-cols-[2fr,1fr]">
                 <Select
-                  value={teamForm.homeMatchDay}
+                  value={teamForm.homeMatchDay || "none"}
                   onValueChange={(value) => {
-                    updateTeamForm("homeMatchDay", value);
-                    if (!value) {
+                    const newValue = value === "none" ? "" : value;
+                    updateTeamForm("homeMatchDay", newValue);
+                    if (value === "none") {
                       updateTeamForm("homeMatchTime", "");
                       updateTeamForm("homeMatchLocation", "");
                     }
@@ -962,7 +1107,7 @@ export const TeamManagement = () => {
                     <SelectValue placeholder="Wochentag auswählen" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Kein Heimspieltermin</SelectItem>
+                    <SelectItem value="none">Kein Heimspieltermin</SelectItem>
                     {WEEKDAYS.map((day) => (
                       <SelectItem key={`home-match-${day}`} value={day}>
                         {day}

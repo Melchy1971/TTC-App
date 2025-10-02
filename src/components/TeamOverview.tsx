@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,28 +8,80 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Crown, Download, MapPin, Printer, Users, Calendar, TrendingUp, Layers } from "lucide-react";
-import { createInitialSeasonStates, initialSeasons } from "@/lib/teamData";
-import type { SeasonState, TeamMember } from "@/types/team";
-
-type PlayerWithTeams = TeamMember & { teams: string[] };
+import { initialSeasons } from "@/lib/teamData";
+import type { Team, TeamMember } from "@/types/team";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 export const TeamOverview = () => {
-  const [seasonStates] = useState<Record<string, SeasonState>>(() => createInitialSeasonStates());
+  const { toast } = useToast();
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedSeasonId, setSelectedSeasonId] = useState(() => {
     const currentSeason = initialSeasons.find((season) => season.isCurrent);
     return currentSeason?.id ?? initialSeasons[0]?.id ?? "";
   });
   const [activeTab, setActiveTab] = useState("overview");
 
+  const loadTeamsForSeason = useCallback(async (seasonId: string) => {
+    try {
+      setLoading(true);
+      const { data: teamsData, error: teamsError } = await supabase
+        .from('teams')
+        .select('*')
+        .eq('season_id', seasonId);
+
+      if (teamsError) throw teamsError;
+
+      const { data: membersData, error: membersError } = await supabase
+        .from('team_members')
+        .select('*');
+
+      if (membersError) throw membersError;
+
+      const teamsWithMembers: Team[] = (teamsData || []).map(team => ({
+        id: team.id,
+        name: team.name,
+        league: team.league,
+        division: team.division || undefined,
+        trainingSlots: (team.training_slots as any[]) || [],
+        homeMatch: team.home_match as any || undefined,
+        members: (membersData || [])
+          .filter(m => m.team_id === team.id)
+          .map(m => ({
+            id: m.member_id,
+            name: m.member_id,
+            email: '',
+            rating: 0,
+            isCaptain: m.is_captain
+          }))
+      }));
+
+      setTeams(teamsWithMembers);
+    } catch (error) {
+      console.error('Error loading teams:', error);
+      toast({
+        title: "Fehler",
+        description: "Teams konnten nicht geladen werden.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    if (selectedSeasonId) {
+      loadTeamsForSeason(selectedSeasonId);
+    }
+  }, [selectedSeasonId, loadTeamsForSeason]);
+
   const selectedSeason = initialSeasons.find((season) => season.id === selectedSeasonId);
-  const selectedState = seasonStates[selectedSeasonId];
 
-  const aggregatedPlayers = useMemo<PlayerWithTeams[]>(() => {
-    if (!selectedState) return [];
+  const aggregatedPlayers = useMemo<(TeamMember & { teams: string[] })[]>(() => {
+    const playerMap = new Map<string, TeamMember & { teams: string[] }>();
 
-    const playerMap = new Map<string, PlayerWithTeams>();
-
-    selectedState.teams.forEach((team) => {
+    teams.forEach((team) => {
       team.members.forEach((member) => {
         const existing = playerMap.get(member.id);
         if (existing) {
@@ -41,19 +93,12 @@ export const TeamOverview = () => {
       });
     });
 
-    selectedState.availableMembers.forEach((member) => {
-      if (playerMap.has(member.id)) return;
-      playerMap.set(member.id, { ...member, teams: [] });
-    });
-
     return Array.from(playerMap.values()).sort((a, b) => b.rating - a.rating);
-  }, [selectedState]);
+  }, [teams]);
 
-  const totalTeams = selectedState?.teams.length ?? 0;
-  const assignedPlayers = selectedState
-    ? selectedState.teams.reduce((sum, team) => sum + team.members.length, 0)
-    : 0;
-  const availablePlayers = selectedState?.availableMembers.length ?? 0;
+  const totalTeams = teams.length;
+  const assignedPlayers = teams.reduce((sum, team) => sum + team.members.length, 0);
+  const availablePlayers = 0;
   const averageRating = aggregatedPlayers.length
     ? Math.round(
         aggregatedPlayers.reduce((sum, player) => sum + player.rating, 0) / aggregatedPlayers.length,
@@ -211,9 +256,13 @@ export const TeamOverview = () => {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
-          {selectedState ? (
+          {loading ? (
+            <div className="flex items-center justify-center p-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : teams.length > 0 ? (
             <div className="grid gap-5 lg:grid-cols-2">
-              {selectedState.teams.map((team) => (
+              {teams.map((team) => (
                 <Card key={team.id} className="shadow-sport h-full">
                   <CardHeader>
                     <div className="flex items-start justify-between gap-3">
@@ -295,38 +344,9 @@ export const TeamOverview = () => {
           ) : (
             <Card className="shadow-sport">
               <CardHeader>
-                <CardTitle>Keine Saison ausgewählt</CardTitle>
-                <CardDescription>Bitte wählen Sie eine Saison aus, um die Mannschaften einzusehen.</CardDescription>
+                <CardTitle>Keine Mannschaften gefunden</CardTitle>
+                <CardDescription>Für diese Saison wurden noch keine Mannschaften angelegt.</CardDescription>
               </CardHeader>
-            </Card>
-          )}
-
-          {selectedState && selectedState.availableMembers.length > 0 && (
-            <Card className="shadow-sport">
-              <CardHeader>
-                <CardTitle>Verfügbare Spieler:innen</CardTitle>
-                <CardDescription>
-                  Diese Mitglieder stehen aktuell keiner Mannschaft zur Verfügung und können flexibel eingeplant werden.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ScrollArea className="max-h-64 pr-4">
-                  <div className="space-y-3">
-                    {selectedState.availableMembers.map((member) => (
-                      <div
-                        key={member.id}
-                        className="flex flex-col gap-1 rounded-lg border border-dashed border-slate-200/80 p-3 sm:flex-row sm:items-center sm:justify-between"
-                      >
-                        <div>
-                          <p className="font-medium text-foreground">{member.name}</p>
-                          <p className="text-xs text-muted-foreground">{member.email}</p>
-                        </div>
-                        <Badge variant="outline">QTTR {member.rating}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </CardContent>
             </Card>
           )}
         </TabsContent>

@@ -14,6 +14,128 @@ export type Database = {
   }
   public: {
     Tables: {
+      board_messages: {
+        Row: {
+          author_id: string
+          content: string
+          created_at: string
+          id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          author_id: string
+          content: string
+          created_at?: string
+          id?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          author_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      club_events: {
+        Row: {
+          author_id: string
+          created_at: string
+          description: string | null
+          event_date: string
+          id: string
+          location: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          author_id: string
+          created_at?: string
+          description?: string | null
+          event_date: string
+          id?: string
+          location?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          author_id?: string
+          created_at?: string
+          description?: string | null
+          event_date?: string
+          id?: string
+          location?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      club_settings: {
+        Row: {
+          created_at: string
+          id: string
+          logo_url: string | null
+          primary_color: string
+          secondary_color: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          logo_url?: string | null
+          primary_color?: string
+          secondary_color?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          logo_url?: string | null
+          primary_color?: string
+          secondary_color?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      match_pins: {
+        Row: {
+          created_at: string
+          id: string
+          match_id: string
+          spielpartie_pin: string | null
+          spielpin: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          match_id: string
+          spielpartie_pin?: string | null
+          spielpin: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          match_id?: string
+          spielpartie_pin?: string | null
+          spielpin?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "match_pins_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: true
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       matches: {
         Row: {
           away_score: number | null
@@ -58,58 +180,129 @@ export type Database = {
       }
       profiles: {
         Row: {
+          birthday: string | null
+          city: string | null
           created_at: string
           email: string | null
           first_name: string | null
           id: string
-          member_number: string | null
           last_name: string | null
+          member_number: string | null
           mobile: string | null
-          photo_url: string | null
           phone: string | null
+          photo_url: string | null
           postal_code: string | null
-          street: string | null
-          city: string | null
-          birthday: string | null
+          requires_password_change: boolean | null
           status: string | null
+          street: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          birthday?: string | null
+          city?: string | null
           created_at?: string
           email?: string | null
           first_name?: string | null
           id?: string
-          member_number?: string | null
           last_name?: string | null
+          member_number?: string | null
           mobile?: string | null
-          photo_url?: string | null
           phone?: string | null
+          photo_url?: string | null
           postal_code?: string | null
-          street?: string | null
-          city?: string | null
-          birthday?: string | null
+          requires_password_change?: boolean | null
           status?: string | null
+          street?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
+          birthday?: string | null
+          city?: string | null
           created_at?: string
           email?: string | null
           first_name?: string | null
           id?: string
-          member_number?: string | null
           last_name?: string | null
+          member_number?: string | null
           mobile?: string | null
-          photo_url?: string | null
           phone?: string | null
+          photo_url?: string | null
           postal_code?: string | null
-          street?: string | null
-          city?: string | null
-          birthday?: string | null
+          requires_password_change?: boolean | null
           status?: string | null
+          street?: string | null
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      team_members: {
+        Row: {
+          created_at: string
+          id: string
+          is_captain: boolean
+          member_id: string
+          team_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_captain?: boolean
+          member_id: string
+          team_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_captain?: boolean
+          member_id?: string
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_members_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      teams: {
+        Row: {
+          created_at: string
+          division: string | null
+          home_match: Json | null
+          id: string
+          league: string
+          name: string
+          season_id: string
+          training_slots: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          division?: string | null
+          home_match?: Json | null
+          id?: string
+          league: string
+          name: string
+          season_id: string
+          training_slots?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          division?: string | null
+          home_match?: Json | null
+          id?: string
+          league?: string
+          name?: string
+          season_id?: string
+          training_slots?: Json
+          updated_at?: string
         }
         Relationships: []
       }
@@ -139,6 +332,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_first_user_id: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -148,7 +345,13 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "moderator" | "player" | "substitute" | "vorstand"
+      app_role:
+        | "admin"
+        | "moderator"
+        | "player"
+        | "substitute"
+        | "vorstand"
+        | "mannschaftsfuehrer"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -276,7 +479,14 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "moderator", "player", "substitute"],
+      app_role: [
+        "admin",
+        "moderator",
+        "player",
+        "substitute",
+        "vorstand",
+        "mannschaftsfuehrer",
+      ],
     },
   },
 } as const

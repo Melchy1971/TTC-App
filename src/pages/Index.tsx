@@ -4,6 +4,7 @@ import { Dashboard } from "@/components/Dashboard";
 import { AuthPage } from "@/components/AuthPage";
 import { MatchSchedule } from "@/components/MatchSchedule";
 import { AdminPanel } from "@/components/AdminPanel";
+import { BoardPanel } from "@/components/BoardPanel";
 import { supabase } from "@/integrations/supabase/client";
 import { User, Session } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
@@ -11,12 +12,16 @@ import { LogOut } from "lucide-react";
 import { Settings } from "@/components/Settings";
 import { Communication } from "@/components/Communication";
 import { TeamOverview } from "@/components/TeamOverview";
+import { Info } from "@/components/Info";
+import { Demo } from "@/components/Demo";
+import { Administrator } from "@/components/Administrator";
 
 const Index = () => {
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [clubLogo, setClubLogo] = useState<string | null>(null);
 
   useEffect(() => {
     // Set up auth state listener FIRST
@@ -35,8 +40,27 @@ const Index = () => {
       setLoading(false);
     });
 
+    // Load club logo
+    loadClubLogo();
+
     return () => subscription.unsubscribe();
   }, []);
+
+  const loadClubLogo = async () => {
+    try {
+      const { data } = await supabase
+        .from('club_settings')
+        .select('logo_url')
+        .limit(1)
+        .maybeSingle();
+      
+      if (data?.logo_url) {
+        setClubLogo(data.logo_url);
+      }
+    } catch (error) {
+      console.error('Error loading club logo:', error);
+    }
+  };
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -62,12 +86,20 @@ const Index = () => {
         return <MatchSchedule />;
       case "teams":
         return <TeamOverview />;
+      case "board":
+        return <BoardPanel />;
       case "admin":
         return <AdminPanel />;
+      case "administrator":
+        return <Administrator />;
+      case "demo":
+        return <Demo />;
       case "communication":
         return <Communication />;
       case "settings":
         return user ? <Settings user={user} /> : null;
+      case "info":
+        return <Info />;
       default:
         return <Dashboard />;
     }

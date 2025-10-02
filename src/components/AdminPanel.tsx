@@ -1,10 +1,12 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Shield, Upload, Users, Calendar, Trophy } from "lucide-react";
-import { IcsImport } from "./IcsImport";
+import { Shield, Upload, Users, Calendar, Trophy, FileText, MapPin } from "lucide-react";
 import { UserAdmin } from "./UserAdmin";
 import { MatchSchedule } from "./MatchSchedule";
 import { useState } from "react";
 import { TeamManagement } from "./TeamManagement";
+import { QttrUpload } from "./QttrUpload";
+import { ImportSection } from "./ImportSection";
+import { PinsManagement } from "./PinsManagement";
 
 export const AdminPanel = () => {
   const [activeTab, setActiveTab] = useState("users");
@@ -18,13 +20,13 @@ export const AdminPanel = () => {
             Admin-Bereich
           </h1>
           <p className="text-muted-foreground">
-            Verwalten Sie Benutzer, Spielpläne und den Import von Spielplänen
+            Verwalten Sie Benutzer, Spielpläne, Pins und den Import von Daten
           </p>
         </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="users" className="flex items-center gap-2">
             <Users className="w-4 h-4" />
             Benutzerverwaltung
@@ -37,9 +39,17 @@ export const AdminPanel = () => {
             <Calendar className="w-4 h-4" />
             Spielplanverwaltung
           </TabsTrigger>
-          <TabsTrigger value="import" className="flex items-center gap-2">
+          <TabsTrigger value="qttr" className="flex items-center gap-2">
+            <FileText className="w-4 h-4" />
+            QTTR/TTR-Liste
+          </TabsTrigger>
+          <TabsTrigger value="pins" className="flex items-center gap-2">
+            <MapPin className="w-4 h-4" />
+            Pins
+          </TabsTrigger>
+          <TabsTrigger value="imports" className="flex items-center gap-2">
             <Upload className="w-4 h-4" />
-            ICS Import
+            Import
           </TabsTrigger>
         </TabsList>
 
@@ -55,8 +65,16 @@ export const AdminPanel = () => {
           <MatchSchedule />
         </TabsContent>
 
-        <TabsContent value="import" className="space-y-6">
-          <IcsImport />
+        <TabsContent value="qttr" className="space-y-6">
+          <QttrUpload />
+        </TabsContent>
+
+        <TabsContent value="pins" className="space-y-6">
+          <PinsManagement />
+        </TabsContent>
+
+        <TabsContent value="imports" className="space-y-6">
+          <ImportSection />
         </TabsContent>
       </Tabs>
     </div>

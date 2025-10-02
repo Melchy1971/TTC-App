@@ -5,8 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { UserCheck } from "lucide-react";
+import { profileSchema, getValidationError } from "@/lib/validation";
 
 interface SettingsProps {
   user: User;
@@ -44,11 +47,21 @@ export const Settings = ({ user }: SettingsProps) => {
   const [formData, setFormData] = useState<ProfileFormData>(emptyProfile);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isPlayer, setIsPlayer] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     const fetchProfile = async () => {
       setLoading(true);
+      
+      // Fetch user roles
+      const { data: rolesData } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id);
+      
+      setIsPlayer(rolesData?.some(r => r.role === 'player') || false);
+      
       const { data, error } = await supabase
         .from("profiles")
         .select("first_name, last_name, email, phone, member_number, street, postal_code, city, mobile, birthday, photo_url")
@@ -65,18 +78,19 @@ export const Settings = ({ user }: SettingsProps) => {
       }
 
       if (data) {
+        const profile = data as any; // Type assertion due to pending Supabase types refresh
         setFormData({
-          first_name: data.first_name || "",
-          last_name: data.last_name || "",
-          member_number: data.member_number || "",
-          street: data.street || "",
-          postal_code: data.postal_code || "",
-          city: data.city || "",
-          email: data.email || user.email || "",
-          phone: data.phone || "",
-          mobile: data.mobile || "",
-          birthday: data.birthday ? data.birthday.substring(0, 10) : "",
-          photo_url: data.photo_url || ""
+          first_name: profile.first_name || "",
+          last_name: profile.last_name || "",
+          member_number: profile.member_number || "",
+          street: profile.street || "",
+          postal_code: profile.postal_code || "",
+          city: profile.city || "",
+          email: profile.email || user.email || "",
+          phone: profile.phone || "",
+          mobile: profile.mobile || "",
+          birthday: profile.birthday ? profile.birthday.substring(0, 10) : "",
+          photo_url: profile.photo_url || ""
         });
       } else {
         setFormData({
@@ -102,22 +116,27 @@ export const Settings = ({ user }: SettingsProps) => {
     event.preventDefault();
     setSaving(true);
 
-    const updatePayload = {
-      first_name: formData.first_name || null,
-      last_name: formData.last_name || null,
-      email: formData.email || null,
-      phone: formData.phone || null,
-      member_number: formData.member_number || null,
-      street: formData.street || null,
-      postal_code: formData.postal_code || null,
-      city: formData.city || null,
-      mobile: formData.mobile || null,
-      birthday: formData.birthday || null,
-      photo_url: formData.photo_url || null,
-      updated_at: new Date().toISOString()
-    };
-
     try {
+      // Validate input
+      const validationResult = profileSchema.safeParse(formData);
+      if (!validationResult.success) {
+        throw new Error(getValidationError(validationResult.error));
+      }
+
+      const updatePayload = {
+        first_name: formData.first_name || null,
+        last_name: formData.last_name || null,
+        email: formData.email || null,
+        phone: formData.phone || null,
+        member_number: formData.member_number || null,
+        street: formData.street || null,
+        postal_code: formData.postal_code || null,
+        city: formData.city || null,
+        mobile: formData.mobile || null,
+        birthday: formData.birthday || null,
+        photo_url: formData.photo_url || null,
+        updated_at: new Date().toISOString()
+      };
       const { data: existingProfile, error: fetchError } = await supabase
         .from("profiles")
         .select("id")
@@ -156,16 +175,15 @@ export const Settings = ({ user }: SettingsProps) => {
         title: "Gespeichert",
         description: "Dein Profil wurde erfolgreich aktualisiert."
       });
-    } catch (error) {
-      console.error("Error updating profile", error);
+    } catch (error: any) {
       toast({
         title: "Fehler",
-        description: "Das Profil konnte nicht gespeichert werden.",
+        description: error.message || "Das Profil konnte nicht gespeichert werden.",
         variant: "destructive"
       });
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
   };
 
   const initials = [formData.first_name, formData.last_name]
@@ -190,8 +208,16 @@ export const Settings = ({ user }: SettingsProps) => {
               <AvatarFallback className="text-lg font-semibold">{initials}</AvatarFallback>
             )}
           </Avatar>
-          <div>
-            <CardTitle className="text-2xl">Mein Profil</CardTitle>
+          <div className="flex-1">
+            <div className="flex items-center gap-3">
+              <CardTitle className="text-2xl">Mein Profil</CardTitle>
+              {isPlayer && (
+                <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
+                  <UserCheck className="w-3 h-3 mr-1" />
+                  Aktiver Spieler
+                </Badge>
+              )}
+            </div>
             <CardDescription>Pflege deine persönlichen Daten.</CardDescription>
           </div>
         </CardHeader>

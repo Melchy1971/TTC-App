@@ -95,11 +95,11 @@ export const UserAdmin = () => {
       
       if (rolesError) throw rolesError;
 
-      // Combine profiles with their roles
+      // Combine profiles with their roles, using type assertion for new fields
       const usersWithRoles = (profilesData || []).map(profile => ({
-        ...profile,
+        ...(profile as any), // Type assertion due to pending Supabase types refresh
         user_roles: (rolesData || []).filter(role => role.user_id === profile.user_id)
-      }));
+      })) as UserProfile[];
 
       setUsers(usersWithRoles);
     } catch (error) {
@@ -117,8 +117,8 @@ export const UserAdmin = () => {
   const roleOptions = useMemo(() => ([
     {
       value: "player" as NormalizedRole,
-      label: "Mitglied",
-      description: "Basisrolle für alle registrierten Mitglieder",
+      label: "Spieler",
+      description: "Aktive Spieler, die Mannschaften zugewiesen werden können",
       icon: User
     },
     {
@@ -150,11 +150,13 @@ export const UserAdmin = () => {
   const normalizeRole = (role?: AppRole | null): NormalizedRole => {
     if (!role) return "player";
     if (role === "moderator") return "captain";
+    if (role === "substitute") return "player"; // Map substitute to player for now
     return role as NormalizedRole;
   };
 
   const denormalizeRole = (role: NormalizedRole): AppRole => {
     if (role === "captain") return "moderator";
+    // vorstand, admin, player stay as-is
     return role as AppRole;
   };
 
@@ -202,9 +204,9 @@ export const UserAdmin = () => {
       admin: "Admin",
       vorstand: "Vorstand",
       captain: "Mannschaftsführer",
-      player: "Mitglied"
+      player: "Spieler"
     };
-    return labels[role] || "Mitglied";
+    return labels[role] || "Spieler";
   };
 
   const getUserDisplayName = (user: UserProfile) => {
@@ -215,7 +217,7 @@ export const UserAdmin = () => {
   };
 
   const getUserRoles = (user: UserProfile): NormalizedRole[] => {
-    const normalized = (user.user_roles || []).map(role => normalizeRole(role.role));
+    const normalized = (user.user_roles || []).map(role => normalizeRole(role.role as AppRole));
     if (!normalized.includes("player")) {
       normalized.push("player");
     }
@@ -223,21 +225,46 @@ export const UserAdmin = () => {
   };
 
   const persistRoles = async (userId: string, roles: NormalizedRole[]) => {
-    const normalizedRoles = roles.length > 0 ? roles : ["player"];
-    const finalRoles = Array.from(new Set([...normalizedRoles, "player"]));
+    const normalizedRoles: NormalizedRole[] = roles.length > 0 ? roles : ["player"];
+    const finalRoles: NormalizedRole[] = Array.from(new Set([...normalizedRoles, "player"]));
 
-    const { error: deleteError } = await supabase
+    // Fetch current roles
+    const { data: currentRolesData, error: fetchError } = await supabase
       .from('user_roles')
-      .delete()
+      .select('role')
       .eq('user_id', userId);
 
-    if (deleteError) throw deleteError;
+    if (fetchError) throw fetchError;
 
-    const { error: insertError } = await supabase
-      .from('user_roles')
-      .insert(finalRoles.map(role => ({ user_id: userId, role: denormalizeRole(role) })));
+    const currentRoles = (currentRolesData || []).map(r => normalizeRole(r.role as any));
+    
+    // Check if user has admin role
+    const isAdmin = currentRoles.includes('admin');
+    
+    // Calculate roles to add and remove
+    const rolesToAdd = finalRoles.filter(role => !currentRoles.includes(role));
+    // Admin users keep all their roles - don't remove any
+    const rolesToRemove = isAdmin ? [] : currentRoles.filter(role => !finalRoles.includes(role));
 
-    if (insertError) throw insertError;
+    // Remove roles that are no longer needed (only for non-admin users)
+    if (rolesToRemove.length > 0) {
+      const { error: deleteError } = await supabase
+        .from('user_roles')
+        .delete()
+        .eq('user_id', userId)
+        .in('role', rolesToRemove.map(r => denormalizeRole(r)));
+
+      if (deleteError) throw deleteError;
+    }
+
+    // Add new roles
+    if (rolesToAdd.length > 0) {
+      const { error: insertError } = await supabase
+        .from('user_roles')
+        .insert(rolesToAdd.map(role => ({ user_id: userId, role: denormalizeRole(role) })));
+
+      if (insertError) throw insertError;
+    }
   };
 
   const pendingUsers = useMemo(
@@ -339,6 +366,18 @@ export const UserAdmin = () => {
         variant: "destructive"
       });
       return;
+    }
+
+    // Validierung für manuelle Anlage: Vorname, Nachname und E-Mail sind Pflichtfelder
+    if (dialogMode === "manual") {
+      if (!formState.first_name?.trim() || !formState.last_name?.trim() || !formState.email?.trim()) {
+        toast({
+          title: "Pflichtfelder fehlen",
+          description: "Bitte füllen Sie Vorname, Nachname und E-Mail aus.",
+          variant: "destructive"
+        });
+        return;
+      }
     }
 
     setIsSaving(true);
@@ -463,7 +502,7 @@ export const UserAdmin = () => {
     const userRoles = getUserRoles(user);
     const matchesSearch = displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          (user.email && user.email.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesRole = roleFilter === "all" || userRoles.includes(roleFilter);
+    const matchesRole = roleFilter === "all" || userRoles.includes(roleFilter as NormalizedRole);
     return matchesSearch && matchesRole;
   });
 
@@ -672,7 +711,7 @@ export const UserAdmin = () => {
               {dialogMode === "create"
                 ? "Weisen Sie einem neu registrierten Mitglied die richtigen Rollen zu und schalten Sie es frei."
                 : dialogMode === "manual"
-                  ? "Erfassen Sie ein Mitglied vollständig manuell ohne vorherige Registrierung."
+                  ? "Erfassen Sie ein Mitglied manuell. Vorname, Nachname und E-Mail sind Pflichtfelder. Restliche Daten kann das Mitglied selbst in seinem Profil ergänzen."
                   : "Aktualisieren Sie die Profildaten und Rollen des Mitglieds."}
             </DialogDescription>
           </DialogHeader>
@@ -708,31 +747,40 @@ export const UserAdmin = () => {
             <div className="space-y-6 pt-4">
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="first_name">Vorname</Label>
+                  <Label htmlFor="first_name">
+                    Vorname {dialogMode === "manual" && <span className="text-destructive">*</span>}
+                  </Label>
                   <Input
                     id="first_name"
                     value={formState.first_name}
                     onChange={handleFormChange('first_name')}
                     placeholder="Vorname"
+                    required={dialogMode === "manual"}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="last_name">Nachname</Label>
+                  <Label htmlFor="last_name">
+                    Nachname {dialogMode === "manual" && <span className="text-destructive">*</span>}
+                  </Label>
                   <Input
                     id="last_name"
                     value={formState.last_name}
                     onChange={handleFormChange('last_name')}
                     placeholder="Nachname"
+                    required={dialogMode === "manual"}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="email">E-Mail</Label>
+                  <Label htmlFor="email">
+                    E-Mail {dialogMode === "manual" && <span className="text-destructive">*</span>}
+                  </Label>
                   <Input
                     id="email"
                     type="email"
                     value={formState.email}
                     onChange={handleFormChange('email')}
                     placeholder="name@example.com"
+                    required={dialogMode === "manual"}
                   />
                 </div>
                 <div className="space-y-2">

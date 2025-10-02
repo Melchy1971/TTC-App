@@ -1,1 +1,7 @@
 project_id = "cowcbkdmwcwblcpgxsgg"
+
+[functions.demo-management]
+verify_jwt = true
+
+[functions.import-members]
+verify_jwt = true

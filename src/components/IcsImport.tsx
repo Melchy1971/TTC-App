@@ -9,12 +9,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { parseIcs } from "@/lib/icsParser";
 import type { Match } from "@/types/match";
+import { supabase } from "@/integrations/supabase/client";
 
 const MATCHES_KEY = "icsImportedMatches";
 const HISTORY_KEY = "icsImportHistory";
 const IMPORT_EVENT = "ics-import-updated";
-
-const TEAM_OPTIONS = ["Herren I", "Herren II", "Damen I", "Jugend U18", "Jugend U15"];
 
 type ImportHistoryItem = {
   file: string;
@@ -66,8 +65,35 @@ export const IcsImport = () => {
   const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
   const [teamAssignmentValue, setTeamAssignmentValue] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [availableTeams, setAvailableTeams] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { toast } = useToast();
+
+  // Load teams from database
+  useEffect(() => {
+    const loadTeams = async () => {
+      const { data: teams, error } = await supabase
+        .from("teams")
+        .select("name")
+        .order("name");
+
+      if (error) {
+        console.error("Error loading teams:", error);
+        toast({
+          title: "Fehler beim Laden der Mannschaften",
+          description: "Die Mannschaften konnten nicht geladen werden.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (teams) {
+        setAvailableTeams(teams.map((team) => team.name));
+      }
+    };
+
+    loadTeams();
+  }, [toast]);
 
   useEffect(() => {
     try {
@@ -87,9 +113,8 @@ export const IcsImport = () => {
 
     try {
       const storedHistory = localStorage.getItem(HISTORY_KEY);
-      if (storedHistory) {
-        setImportHistory(JSON.parse(storedHistory) as ImportHistoryItem[]);
-      }
+      // Import history is intentionally kept empty
+      setImportHistory([]);
     } catch (error) {
       console.error("Fehler beim Laden des Import-Verlaufs:", error);
     }
@@ -466,15 +491,6 @@ export const IcsImport = () => {
                   <FileText className="w-4 h-4 mr-2" />
                   Datei auswählen
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={handleSampleImport}
-                  disabled={isProcessing}
-                  className="hover:bg-muted"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Beispieldatei importieren
-                </Button>
               </div>
               {isProcessing && (
                 <p className="mt-4 text-sm text-muted-foreground">
@@ -500,15 +516,15 @@ export const IcsImport = () => {
                 className="w-full p-2 border rounded-md bg-background"
                 value={selectedTeam}
                 onChange={(event) => setSelectedTeam(event.target.value)}
-                disabled={isProcessing}
-              >
-                <option value="auto">Automatisch erkennen</option>
-                {TEAM_OPTIONS.map((team) => (
-                  <option key={team} value={team}>
-                    {team}
-                  </option>
-                ))}
-              </select>
+                 disabled={isProcessing}
+               >
+                 <option value="auto">Automatisch erkennen</option>
+                 {availableTeams.map((team) => (
+                   <option key={team} value={team}>
+                     {team}
+                   </option>
+                 ))}
+               </select>
               <p className="text-xs text-muted-foreground">
                 Wenn die ICS-Datei keine Mannschaft enthält, wird diese Auswahl verwendet.
               </p>
@@ -609,15 +625,15 @@ export const IcsImport = () => {
                       id="team-assignment"
                       className="w-full rounded-md border bg-background p-2 sm:w-64"
                       value={teamAssignmentValue}
-                      onChange={handleTeamAssignmentChange}
-                    >
-                      <option value="">Team auswählen…</option>
-                      {TEAM_OPTIONS.map((team) => (
-                        <option key={team} value={team}>
-                          {team}
-                        </option>
-                      ))}
-                    </select>
+                       onChange={handleTeamAssignmentChange}
+                     >
+                       <option value="">Team auswählen…</option>
+                       {availableTeams.map((team) => (
+                         <option key={team} value={team}>
+                           {team}
+                         </option>
+                       ))}
+                     </select>
                     <span className="text-xs text-muted-foreground">
                       {selectedMatchIds.length > 0
                         ? `${selectedMatchIds.length} Spiele markiert`

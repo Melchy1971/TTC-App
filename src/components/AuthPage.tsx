@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Mail, Lock, User } from "lucide-react";
+import { signInSchema, signUpSchema, getValidationError } from "@/lib/validation";
 
 export const AuthPage = () => {
   const [email, setEmail] = useState("");
@@ -44,9 +45,15 @@ export const AuthPage = () => {
     setLoading(true);
 
     try {
+      // Validate input
+      const validationResult = signInSchema.safeParse({ email, password });
+      if (!validationResult.success) {
+        throw new Error(getValidationError(validationResult.error));
+      }
+
       const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+        email: validationResult.data.email,
+        password: validationResult.data.password,
       });
 
       if (error) throw error;
@@ -71,14 +78,25 @@ export const AuthPage = () => {
     setLoading(true);
 
     try {
+      // Validate input
+      const validationResult = signUpSchema.safeParse({ 
+        email, 
+        password, 
+        firstName, 
+        lastName 
+      });
+      if (!validationResult.success) {
+        throw new Error(getValidationError(validationResult.error));
+      }
+
       const { error } = await supabase.auth.signUp({
-        email,
-        password,
+        email: validationResult.data.email,
+        password: validationResult.data.password,
         options: {
           emailRedirectTo: `${window.location.origin}/`,
           data: {
-            first_name: firstName,
-            last_name: lastName,
+            first_name: validationResult.data.firstName,
+            last_name: validationResult.data.lastName,
           },
         },
       });
